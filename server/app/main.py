@@ -5,9 +5,24 @@ from typing import Annotated
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
-from app import changes, feedback, implementer, jira, planner, reviewer, skills, tester
+from app import (
+    changes,
+    feedback,
+    gitlab,
+    implementer,
+    jira,
+    planner,
+    reviewer,
+    skills,
+    tester,
+)
 from app.ai_config import AiConfig, load_ai_config, save_ai_config
-from app.config import Settings, get_settings, save_credentials
+from app.config import (
+    GITLAB_FIELDS,
+    Settings,
+    get_settings,
+    save_credentials,
+)
 from app.db import CARD_KEY_RE, Approvals, Database
 from app.legacy_import import import_legacy_files
 
@@ -908,3 +923,150 @@ async def get_changes(
         raise HTTPException(422, str(e)) from None
     except implementer.ImplementationError as e:
         raise HTTPException(500, str(e)) from None
+
+
+class GitLabCredentialsUpdate(BaseModel):
+    url: str | None = None
+    token: str | None = None
+
+    @field_validator("url", "token")
+    @classmethod
+    def not_blank(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            raise ValueError("Must not be empty")
+        return v
+
+    @field_validator("url")
+    @classmethod
+    def valid_url(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        if not v.startswith(("http://", "https://")):
+            raise ValueError("Must start with http:// or https://")
+        return v.rstrip("/")
+
+
+class GitLabMappingBody(BaseModel):
+    path: str
+
+    @field_validator("path")
+    @classmethod
+    def valid_path(cls, v: str) -> str:
+        v = v.strip().strip("/").removesuffix(".git")
+        if not gitlab.PROJECT_PATH_RE.match(v):
+            raise ValueError("Use the project path, like group/subgroup/project")
+        return v
+
+
+class GitLabProjectInfo(BaseModel):
+    project: str
+    repo: str
+    detected: str | None
+    override: str | None
+    effective: str | None
+
+
+@app.get("/api/gitlab/status")
+async def gitlab_status(settings: SettingsDep) -> dict:
+    status = {
+        "configured": settings.gitlab_configured,
+        "connected": False,
+        "user": None,
+        "url": settings.gitlab_url,
+    }
+    if not settings.gitlab_configured:
+        return status
+    try:
+        status["user"] = await gitlab.fetch_current_user(settings)
+        status["connected"] = True
+    except gitlab.GitLabError:
+        pass
+    return status
+
+
+@app.put("/api/gitlab/credentials")
+async def update_gitlab_credentials(
+    body: GitLabCredentialsUpdate, settings: SettingsDep
+) -> dict:
+    """Update the stored GitLab credentials; verified against GitLab before saving."""
+    updates = {"gitlab_url": body.url, "gitlab_token": body.token}
+    updates = {k: v for k, v in updates.items() if v is not None}
+    if not updates:
+        raise HTTPException(422, "Provide at least one of url, token")
+    candidate = settings.model_copy(update=updates)
+    if not candidate.gitlab_configured:
+        raise HTTPException(422, "GitLab URL and token are both required")
+    try:
+        user = await gitlab.fetch_current_user(candidate)
+    except gitlab.GitLabError as e:
+        raise HTTPException(400, f"GitLab did not accept these credentials: {e}") from e
+    save_credentials(settings.gitlab_credentials_file, updates, GITLAB_FIELDS)
+    return {"connected": True, "user": user}
+
+
+async def _gitlab_info(
+    settings: Settings, project: str, repo: str
+) -> GitLabProjectInfo:
+    detected = await gitlab.detect_project_path(repo, settings.gitlab_url)
+    override = gitlab.ProjectMappings(_db(settings)).get(project)
+    return GitLabProjectInfo(
+        project=project,
+        repo=repo,
+        detected=detected,
+        override=override,
+        effective=override or detected,
+    )
+
+
+@app.get("/api/gitlab/projects")
+async def list_gitlab_projects(settings: SettingsDep) -> list[GitLabProjectInfo]:
+    """Every Jira project with a repo, and the GitLab project it maps to."""
+    repos = load_ai_config(settings.ai_config_file).project_repos
+    return [
+        await _gitlab_info(settings, project, repo)
+        for project, repo in sorted(repos.items())
+    ]
+
+
+@app.put("/api/gitlab/projects/{project}")
+async def put_gitlab_project(
+    project: str, body: GitLabMappingBody, settings: SettingsDep
+) -> GitLabProjectInfo:
+    repo = _project_repo(settings, project)
+    project = project.upper()
+    gitlab.ProjectMappings(_db(settings)).set(project, body.path)
+    return await _gitlab_info(settings, project, repo)
+
+
+@app.delete("/api/gitlab/projects/{project}")
+async def delete_gitlab_project(
+    project: str, settings: SettingsDep
+) -> GitLabProjectInfo:
+    repo = _project_repo(settings, project)
+    project = project.upper()
+    gitlab.ProjectMappings(_db(settings)).delete(project)
+    return await _gitlab_info(settings, project, repo)
+
+
+@app.get("/api/gitlab/projects/{project}/check")
+async def check_gitlab_project(
+    project: str, settings: SettingsDep
+) -> gitlab.GitLabProject:
+    """Confirm the token can see the mapped GitLab project and report its default branch."""
+    repo = _project_repo(settings, project)
+    if not settings.gitlab_configured:
+        raise HTTPException(
+            503, "GitLab is not configured. Add your credentials in Settings."
+        )
+    info = await _gitlab_info(settings, project.upper(), repo)
+    if info.effective is None:
+        raise HTTPException(
+            409, "No GitLab project is known for this repo. Set one in Settings."
+        )
+    try:
+        return await gitlab.fetch_project(settings, info.effective)
+    except gitlab.GitLabError as e:
+        raise HTTPException(502, str(e)) from e

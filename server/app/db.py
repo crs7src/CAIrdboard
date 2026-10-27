@@ -38,6 +38,10 @@ CREATE TABLE IF NOT EXISTS test_approvals (
     card_key TEXT PRIMARY KEY,
     approved_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS gitlab_projects (
+    project TEXT PRIMARY KEY,
+    path TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL

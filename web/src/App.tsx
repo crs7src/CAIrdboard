@@ -3,6 +3,7 @@ import Layout from './Layout'
 import AiSettings from './pages/AiSettings'
 import CardDetail from './pages/CardDetail'
 import Changes from './pages/Changes'
+import GitLabSettings from './pages/GitLabSettings'
 import Home from './pages/Home'
 import TestAppsSettings from './pages/TestAppsSettings'
 import SkillsSettings from './pages/SkillsSettings'
@@ -22,6 +23,7 @@ export default function App() {
           <Route path="jira" element={<Settings />} />
           <Route path="ai" element={<AiSettings />} />
           <Route path="skills" element={<SkillsSettings />} />
+          <Route path="gitlab" element={<GitLabSettings />} />
           <Route path="test-apps" element={<TestAppsSettings />} />
         </Route>
       </Route>

@@ -502,3 +502,73 @@ export async function submitFeedback(key: string): Promise<FeedbackRun> {
   if (!response.ok) throw await failure(response)
   return response.json()
 }
+
+export interface GitLabStatus {
+  configured: boolean
+  connected: boolean
+  user: string | null
+  url: string
+}
+
+export interface GitLabCredentialsUpdate {
+  url?: string
+  token?: string
+}
+
+export interface GitLabProjectInfo {
+  project: string
+  repo: string
+  detected: string | null
+  override: string | null
+  effective: string | null
+}
+
+export interface GitLabProjectCheck {
+  id: number
+  path: string
+  web_url: string
+  default_branch: string | null
+}
+
+export async function fetchGitLabStatus(): Promise<GitLabStatus> {
+  const response = await fetch('/api/gitlab/status')
+  if (!response.ok) throw await failure(response)
+  return response.json()
+}
+
+export async function saveGitLabCredentials(update: GitLabCredentialsUpdate): Promise<{ user: string }> {
+  const response = await fetch('/api/gitlab/credentials', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(update),
+  })
+  if (!response.ok) throw await failure(response)
+  return response.json()
+}
+
+export async function fetchGitLabProjects(): Promise<GitLabProjectInfo[]> {
+  const response = await fetch('/api/gitlab/projects')
+  if (!response.ok) throw await failure(response)
+  return response.json()
+}
+
+export async function setGitLabProject(project: string, path: string | null): Promise<GitLabProjectInfo> {
+  const response = await fetch(
+    `/api/gitlab/projects/${project}`,
+    path === null
+      ? { method: 'DELETE' }
+      : {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path }),
+        },
+  )
+  if (!response.ok) throw await failure(response)
+  return response.json()
+}
+
+export async function checkGitLabProject(project: string): Promise<GitLabProjectCheck> {
+  const response = await fetch(`/api/gitlab/projects/${project}/check`)
+  if (!response.ok) throw await failure(response)
+  return response.json()
+}

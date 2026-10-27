@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     jira_email: str = ""
     jira_api_token: str = ""
     jira_credentials_file: Path = Path("data/jira.json")
+    gitlab_url: str = ""
+    gitlab_token: str = ""
+    gitlab_credentials_file: Path = Path("data/gitlab.json")
     ai_config_file: Path = Path("data/ai_config.json")
     db_file: Path = Path("data/cairdboard.db")
     # Folders of JSON files written before the SQLite database; imported once at startup.
@@ -34,21 +37,30 @@ class Settings(BaseSettings):
     def jira_configured(self) -> bool:
         return bool(self.jira_base_url and self.jira_email and self.jira_api_token)
 
+    @property
+    def gitlab_configured(self) -> bool:
+        return bool(self.gitlab_url and self.gitlab_token)
+
 
 CREDENTIAL_FIELDS = ("jira_base_url", "jira_email", "jira_api_token")
+GITLAB_FIELDS = ("gitlab_url", "gitlab_token")
 
 
-def read_saved_credentials(path: Path) -> dict[str, str]:
+def read_saved_credentials(
+    path: Path, fields: tuple[str, ...] = CREDENTIAL_FIELDS
+) -> dict[str, str]:
     try:
         data = json.loads(path.read_text())
     except FileNotFoundError, json.JSONDecodeError:
         return {}
-    return {k: v for k, v in data.items() if k in CREDENTIAL_FIELDS and v}
+    return {k: v for k, v in data.items() if k in fields and v}
 
 
-def save_credentials(path: Path, values: dict[str, str]) -> None:
+def save_credentials(
+    path: Path, values: dict[str, str], fields: tuple[str, ...] = CREDENTIAL_FIELDS
+) -> None:
     """Merge values into the saved credentials; omitted fields keep their value."""
-    merged = {**read_saved_credentials(path), **values}
+    merged = {**read_saved_credentials(path, fields), **values}
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -61,4 +73,5 @@ def get_settings() -> Settings:
     """Saved credentials override .env; re-read per request so changes apply immediately."""
     settings = Settings()
     saved = read_saved_credentials(settings.jira_credentials_file)
+    saved |= read_saved_credentials(settings.gitlab_credentials_file, GITLAB_FIELDS)
     return settings.model_copy(update=saved)
