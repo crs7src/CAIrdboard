@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     jira_credentials_file: Path = Path("data/jira.json")
     ai_config_file: Path = Path("data/ai_config.json")
     plans_dir: Path = Path("data/plans")
+    skills_dir: Path = Path("data/skills")
     copilot_command: str = "copilot"
     plan_timeout_seconds: float = 900
     implementations_dir: Path = Path("data/implementations")

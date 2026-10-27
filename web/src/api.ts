@@ -126,6 +126,35 @@ export async function saveAiConfig(config: AiConfig): Promise<AiConfig> {
   return response.json()
 }
 
+export interface Skill {
+  step: 'planner' | 'implementer' | 'reviewer'
+  content: string
+  default_content: string
+  customized: boolean
+}
+
+export async function fetchSkills(): Promise<Skill[]> {
+  const response = await fetch('/api/skills')
+  if (!response.ok) throw await failure(response)
+  return response.json()
+}
+
+export async function saveSkill(step: string, content: string): Promise<Skill> {
+  const response = await fetch(`/api/skills/${step}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  })
+  if (!response.ok) throw await failure(response)
+  return response.json()
+}
+
+export async function resetSkill(step: string): Promise<Skill> {
+  const response = await fetch(`/api/skills/${step}`, { method: 'DELETE' })
+  if (!response.ok) throw await failure(response)
+  return response.json()
+}
+
 export type PlanState = 'running' | 'ready' | 'failed' | 'approved' | 'rejected'
 
 export interface Plan {

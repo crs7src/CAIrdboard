@@ -8,8 +8,10 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from app import skills
 from app.jira import Card
 from app.jira import is_reopened_status as is_reopened
+from app.skills import SkillError
 
 PlanState = Literal["running", "ready", "failed", "approved", "rejected"]
 
@@ -67,14 +69,7 @@ async def run_command(args: list[str], cwd: str, timeout: float) -> CommandResul
     return CommandResult(proc.returncode or 0, out.decode(), err.decode())
 
 
-SKILL_PATH = (
-    Path(__file__).resolve().parent.parent / "skills" / "card-planner" / "SKILL.md"
-)
 MODE_HEADING = "## Mode: "
-
-
-class SkillError(Exception):
-    pass
 
 
 def needs_rework(card: Card) -> bool:
@@ -82,12 +77,15 @@ def needs_rework(card: Card) -> bool:
     return card.reopened or is_reopened(card.status)
 
 
-def load_skill(rework: bool, path: Path = SKILL_PATH) -> str:
+def load_skill(rework: bool, path: Path | None = None) -> str:
     """Return the skill's shared preamble plus the section for this card's status."""
-    try:
-        text = path.read_text()
-    except OSError as e:
-        raise SkillError(f"Planner skill file could not be read: {path}") from e
+    if path is None:
+        text = skills.read("planner")
+    else:
+        try:
+            text = path.read_text()
+        except OSError as e:
+            raise SkillError(f"Planner skill file could not be read: {path}") from e
     if text.startswith("---"):
         text = text.split("---", 2)[-1]
     preamble, *modes = text.split(MODE_HEADING)
@@ -124,6 +122,8 @@ def build_prompt(
     skill: str | None = None,
 ) -> str:
     parts = [
+        skills.AGENTS_PREAMBLE,
+        "",
         skill if skill is not None else load_skill(needs_rework(card)),
         "",
         f"Card: {card.key} - {card.summary}",

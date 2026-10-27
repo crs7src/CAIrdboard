@@ -30,8 +30,8 @@ branch for you.
 
 ## Follow the repository's conventions
 
-Before changing anything, read the repo's instructions (for example
-`.github/copilot-instructions.md`, `AGENTS.md`, `README`) and follow them. If they do
+Before doing anything else, read the repo's instructions (`AGENTS.md`,
+`.github/copilot-instructions.md`, and the `README`) and follow them. If they do
 not say otherwise, apply these defaults:
 
 - Add or update **unit tests** for all new functionality (an input producing an

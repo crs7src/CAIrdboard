@@ -52,3 +52,8 @@ test('AI settings is a tab under Settings and the old URL redirects', async () =
   expect(await screen.findByRole('heading', { name: 'Jira connection' })).toBeInTheDocument()
   expect(screen.getByRole('tab', { name: 'Jira' })).toHaveAttribute('aria-selected', 'true')
 })
+
+test('Settings has a Skills tab', async () => {
+  renderAt('/settings/skills')
+  expect(await screen.findByRole('tab', { name: 'Skills' })).toHaveAttribute('aria-selected', 'true')
+})

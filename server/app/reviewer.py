@@ -5,6 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from app import skills
 from app.implementer import (
     ACTIVE_REPOS,
     DENIED_TOOLS,
@@ -24,14 +25,11 @@ from app.planner import (
     needs_rework,
     run_command,
 )
+from app.skills import SkillError
 
 # running: in progress; clean: reviewed with nothing to fix; fixed: the reviewer
 # committed fixes, so the result needs another review; failed: the run broke.
 ReviewState = Literal["running", "clean", "fixed", "failed"]
-
-SKILL_PATH = (
-    Path(__file__).resolve().parent.parent / "skills" / "card-reviewer" / "SKILL.md"
-)
 
 
 class Review(BaseModel):
@@ -116,18 +114,15 @@ def recover_stale(store: ReviewStore, run: Review | None) -> Review | None:
     return run
 
 
-class SkillError(Exception):
-    pass
-
-
-def load_skill(path: Path = SKILL_PATH) -> str:
+def load_skill(path: Path | None = None) -> str:
+    """The reviewer skill: the given file, else the user's override or the default."""
+    if path is None:
+        return skills.strip_frontmatter(skills.read("reviewer"))
     try:
         text = path.read_text()
     except OSError as e:
         raise SkillError(f"Reviewer skill file could not be read: {path}") from e
-    if text.startswith("---"):
-        text = text.split("---", 2)[-1]
-    return text.strip()
+    return skills.strip_frontmatter(text)
 
 
 def build_prompt(
@@ -137,6 +132,8 @@ def build_prompt(
     skill: str | None = None,
 ) -> str:
     parts = [
+        skills.AGENTS_PREAMBLE,
+        "",
         skill if skill is not None else load_skill(),
         "",
         f"Card: {card.key} - {card.summary}",

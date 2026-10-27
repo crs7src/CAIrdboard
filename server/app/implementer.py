@@ -6,6 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from app import skills
 from app.jira import Card
 from app.planner import (
     CARD_KEY_RE,
@@ -17,13 +18,10 @@ from app.planner import (
     needs_rework,
     run_command,
 )
+from app.skills import SkillError
 
 ImplState = Literal["running", "completed", "failed"]
 ImplStage = Literal["preparing", "implementing", "done"]
-
-SKILL_PATH = (
-    Path(__file__).resolve().parent.parent / "skills" / "card-implementer" / "SKILL.md"
-)
 
 # The implementer may edit files and run commands, but never publish anything,
 # rewrite history, or destroy work. It may checkout/switch, but run_implementation
@@ -273,18 +271,15 @@ async def list_commits(runner, repo: str, base_commit: str | None) -> list[Commi
 # ---- prompt and AI run ------------------------------------------------------
 
 
-class SkillError(Exception):
-    pass
-
-
-def load_skill(path: Path = SKILL_PATH) -> str:
+def load_skill(path: Path | None = None) -> str:
+    """The implementer skill: the given file, else the user's override or the default."""
+    if path is None:
+        return skills.strip_frontmatter(skills.read("implementer"))
     try:
         text = path.read_text()
     except OSError as e:
         raise SkillError(f"Implementer skill file could not be read: {path}") from e
-    if text.startswith("---"):
-        text = text.split("---", 2)[-1]
-    return text.strip()
+    return skills.strip_frontmatter(text)
 
 
 def build_prompt(
@@ -295,6 +290,8 @@ def build_prompt(
     skill: str | None = None,
 ) -> str:
     parts = [
+        skills.AGENTS_PREAMBLE,
+        "",
         skill if skill is not None else load_skill(),
         "",
         f"Card: {card.key} - {card.summary}",

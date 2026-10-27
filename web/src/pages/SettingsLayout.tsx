@@ -12,7 +12,9 @@ export default function SettingsLayout() {
         Settings
       </Typography>
       <Tabs
-        value={pathname.startsWith('/settings/jira') ? '/settings/jira' : '/settings/ai'}
+        value={
+          ['/settings/jira', '/settings/skills'].find((p) => pathname.startsWith(p)) ?? '/settings/ai'
+        }
         sx={{
           bgcolor: '#0d2a4d',
           borderRadius: 1,
@@ -22,6 +24,7 @@ export default function SettingsLayout() {
         }}
       >
         <Tab label="AI" value="/settings/ai" component={Link} to="/settings/ai" />
+        <Tab label="Skills" value="/settings/skills" component={Link} to="/settings/skills" />
         <Tab label="Jira" value="/settings/jira" component={Link} to="/settings/jira" />
       </Tabs>
       <Outlet />

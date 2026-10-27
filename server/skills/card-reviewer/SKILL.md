@@ -17,6 +17,9 @@ review are the diff `<base commit>..HEAD`.
 
 ## How to review
 
+0. Before anything else, read the repo's `AGENTS.md` and `.github/copilot-instructions.md`
+   if they exist, and follow them.
+
 1. Read the diff with `git diff <base commit>..HEAD` and `git log` for that range.
 2. Use the code-review agent for the review itself: call the `task` tool with
    `agent_type: code-review` and give it the diff range, the card and the plan as context.

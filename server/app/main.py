@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from pydantic import BaseModel, field_validator
 
-from app import changes, implementer, jira, planner, reviewer
+from app import changes, implementer, jira, planner, reviewer, skills
 from app.ai_config import AiConfig, load_ai_config, save_ai_config
 from app.config import Settings, get_settings, save_credentials
 
@@ -146,6 +146,59 @@ def get_ai_config(settings: SettingsDep) -> AiConfig:
 def put_ai_config(config: AiConfig, settings: SettingsDep) -> AiConfig:
     save_ai_config(settings.ai_config_file, config)
     return config
+
+
+class SkillInfo(BaseModel):
+    step: str
+    content: str
+    default_content: str
+    customized: bool
+
+
+class SkillUpdate(BaseModel):
+    content: str
+
+
+def skill_info(step: str) -> SkillInfo:
+    try:
+        default = skills.read_default(step)
+        override = skills.read_override(step)
+    except skills.SkillError as e:
+        raise HTTPException(500, str(e)) from e
+    return SkillInfo(
+        step=step,
+        content=default if override is None else override,
+        default_content=default,
+        customized=override is not None,
+    )
+
+
+def check_step(step: str) -> None:
+    if step not in skills.STEPS:
+        raise HTTPException(404, f"Unknown step '{step}'")
+
+
+@app.get("/api/skills")
+def list_skills() -> list[SkillInfo]:
+    return [skill_info(step) for step in skills.STEPS]
+
+
+@app.put("/api/skills/{step}")
+def put_skill(step: str, body: SkillUpdate) -> SkillInfo:
+    check_step(step)
+    try:
+        skills.save_override(step, body.content)
+    except skills.SkillError as e:
+        raise HTTPException(422, str(e)) from e
+    return skill_info(step)
+
+
+@app.delete("/api/skills/{step}")
+def reset_skill(step: str) -> SkillInfo:
+    """Remove the user's override so the bundled default is used again."""
+    check_step(step)
+    skills.delete_override(step)
+    return skill_info(step)
 
 
 class DirEntry(BaseModel):

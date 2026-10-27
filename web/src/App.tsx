@@ -4,6 +4,7 @@ import AiSettings from './pages/AiSettings'
 import CardDetail from './pages/CardDetail'
 import Changes from './pages/Changes'
 import Home from './pages/Home'
+import SkillsSettings from './pages/SkillsSettings'
 import Settings from './pages/Settings'
 import SettingsLayout from './pages/SettingsLayout'
 
@@ -19,6 +20,7 @@ export default function App() {
           <Route index element={<Navigate to="/settings/ai" replace />} />
           <Route path="jira" element={<Settings />} />
           <Route path="ai" element={<AiSettings />} />
+          <Route path="skills" element={<SkillsSettings />} />
         </Route>
       </Route>
     </Routes>
