@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 import respx
+from dbutil import db
 from fastapi.testclient import TestClient
 from test_implementation import (
     approve_plan,
@@ -61,7 +62,7 @@ def make_impl(tmp_path, work, state="completed"):
     sh(work, "git", "checkout", "-q", "-b", BRANCH)
     commit_file(work, "feature.txt", "AB-1: step 1 - add toggle")
     sh(work, "git", "checkout", "-q", "main")
-    store = implementer.ImplementationStore(tmp_path / "impls")
+    store = implementer.ImplementationStore(db())
     impl = store.create("AB-1", 1)
     impl.state, impl.branch, impl.base_commit = state, BRANCH, base
     impl.report = "## Summary\nImplemented"
@@ -69,7 +70,7 @@ def make_impl(tmp_path, work, state="completed"):
 
 
 async def run_rev(tmp_path, work, impl, ai):
-    store = reviewer.ReviewStore(tmp_path / "reviews")
+    store = reviewer.ReviewStore(db())
     run = store.create("AB-1", impl)
     reviewer.ACTIVE.add("AB-1")
     implementer.ACTIVE_REPOS.add(str(work))
@@ -201,7 +202,7 @@ def test_get_without_review_is_404_and_stale_run_fails(client, env):
     assert client.get("/api/cards/AB-1/review").status_code == 404
     assert client.get("/api/cards/bad_key/review").status_code == 404
     impl = make_impl(tmp_path, work)
-    reviewer.ReviewStore(tmp_path / "reviews").create("AB-1", impl)
+    reviewer.ReviewStore(db()).create("AB-1", impl)
     body = client.get("/api/cards/AB-1/review").json()
     assert body["state"] == "failed" and "Interrupted" in body["error"]
 

@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 import respx
+from dbutil import db
 from fastapi.testclient import TestClient
 
 from app import implementer, planner
@@ -101,7 +102,7 @@ def make_card(**kw):
 
 
 async def run_impl(tmp_path, work, ai, card=None, plan_text="1. Do it\n2. Test it"):
-    store = implementer.ImplementationStore(tmp_path / "impls")
+    store = implementer.ImplementationStore(db())
     run = store.create("AB-1", 1)
     implementer.ACTIVE.add("AB-1")
     implementer.ACTIVE_REPOS.add(str(work))
@@ -367,7 +368,7 @@ def client(env, ai):
 
 
 def approve_plan(tmp_path, state="approved", text="1. Do it"):
-    store = planner.PlanStore(tmp_path / "plans")
+    store = planner.PlanStore(db())
     plan = store.create("AB-1", "DEV In Progress", None)
     plan.state, plan.plan = state, text
     store.save(plan)
@@ -449,17 +450,15 @@ def test_start_without_a_valid_repo_is_422(client, env):
 
 
 def test_stale_running_implementation_is_marked_failed(client, env):
-    tmp_path, _ = env
-    store = implementer.ImplementationStore(tmp_path / "impls")
+    store = implementer.ImplementationStore(db())
     store.create("AB-1", 1)
     body = client.get("/api/cards/AB-1/implementation").json()
     assert body["state"] == "failed" and "Interrupted" in body["error"]
 
 
 def test_implementations_listing(env, client):
-    tmp_path, _ = env
     assert client.get("/api/implementations").json() == {}
-    store = implementer.ImplementationStore(tmp_path / "impls")
+    store = implementer.ImplementationStore(db())
     run = store.create("AB-1", 1)
     run.state = "completed"
     store.save(run)

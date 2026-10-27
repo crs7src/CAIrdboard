@@ -13,6 +13,7 @@ import httpx
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app import skills
+from app.db import Database, RunStore, check_key
 from app.implementer import (
     ACTIVE_REPOS,
     DENIED_TOOLS,
@@ -22,7 +23,6 @@ from app.implementer import (
 )
 from app.jira import Card
 from app.planner import (
-    CARD_KEY_RE,
     CommandNotFound,
     CommandTimeout,
     format_comments,
@@ -166,32 +166,23 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-class TestStore:
-    """One JSON file per run: <root>/<CARD-KEY>/<version>.json (plus <version>-app<n>.log per app)."""
+class TestStore(RunStore[TestRun]):
+    """Runs are versioned rows; each app's log is <logs>/<KEY>/<version>-app<n>.log."""
 
     __test__ = False
+    kind = "test"
+    model = TestRun
 
-    def __init__(self, root: Path):
-        self.root = root
-
-    def _dir(self, key: str) -> Path:
-        if not CARD_KEY_RE.match(key):
-            raise ValueError(f"Invalid card key: {key}")
-        return self.root / key
+    def __init__(self, db: Database, logs_root: Path):
+        super().__init__(db)
+        self.logs_root = logs_root
 
     def log_path(self, run: TestRun, index: int) -> Path:
-        return self._dir(run.card_key) / f"{run.version}-app{index + 1}.log"
-
-    def versions(self, key: str) -> list[TestRun]:
-        d = self._dir(key)
-        if not d.exists():
-            return []
-        runs = [TestRun.model_validate_json(p.read_text()) for p in d.glob("*.json")]
-        return sorted(runs, key=lambda r: r.version)
-
-    def latest(self, key: str) -> TestRun | None:
-        runs = self.versions(key)
-        return runs[-1] if runs else None
+        return (
+            self.logs_root
+            / check_key(run.card_key)
+            / f"{run.version}-app{index + 1}.log"
+        )
 
     def create(
         self,
@@ -201,30 +192,21 @@ class TestStore:
         source: TestSource = "ai",
         problem: str | None = None,
     ) -> TestRun:
-        latest = self.latest(key)
-        now = _now()
-        run = TestRun(
-            card_key=key,
-            version=(latest.version + 1) if latest else 1,
-            review_version=review_version,
-            state="preparing",
-            source=source,
-            problem=problem,
-            branch=impl.branch,
-            created_at=now,
-            updated_at=now,
-        )
-        return self.save(run)
+        def build(version: int, stamp: str):
+            run = TestRun(
+                card_key=key,
+                version=version,
+                review_version=review_version,
+                state="preparing",
+                source=source,
+                problem=problem,
+                branch=impl.branch,
+                created_at=stamp,
+                updated_at=stamp,
+            )
+            return run
 
-    def save(self, run: TestRun) -> TestRun:
-        run.updated_at = _now()
-        d = self._dir(run.card_key)
-        d.mkdir(parents=True, exist_ok=True)
-        path = d / f"{run.version}.json"
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(run.model_dump_json(indent=2))
-        os.replace(tmp, path)
-        return run
+        return self.create_run(key, build)
 
 
 class SavedConfig(BaseModel):
@@ -237,42 +219,55 @@ class SavedConfig(BaseModel):
 
 
 class ConfigStore:
-    """One JSON file per Jira project: <root>/<PROJECT>.json."""
+    """One saved set of apps per Jira project."""
 
-    def __init__(self, root: Path):
-        self.root = root
+    def __init__(self, db: Database):
+        self.db = db
 
-    def _path(self, project: str) -> Path:
+    @staticmethod
+    def _check(project: str) -> str:
         if not PROJECT_RE.match(project):
             raise ValueError(f"Invalid project key: {project}")
-        return self.root / f"{project}.json"
+        return project
 
     def load(self, project: str) -> SavedConfig | None:
-        path = self._path(project)
-        if not path.exists():
+        with self.db.connect() as conn:
+            row = conn.execute(
+                "SELECT data FROM test_configs WHERE project = ?",
+                (self._check(project),),
+            ).fetchone()
+        if row is None:
             return None
         try:
-            return SavedConfig.model_validate_json(path.read_text())
+            return SavedConfig.model_validate_json(row[0])
         except ValueError:
             return None
+
+    def projects(self) -> list[str]:
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                "SELECT project FROM test_configs ORDER BY project"
+            ).fetchall()
+        return [r[0] for r in rows if self.load(r[0])]
 
     def save(self, project: str, apps: list[AppSpec], card_key: str) -> SavedConfig:
         config = SavedConfig(
             project=project, apps=apps, saved_from=card_key, saved_at=_now()
         )
-        path = self._path(project)
-        self.root.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(config.model_dump_json(indent=2))
-        os.replace(tmp, path)
+        with self.db.connect() as conn:
+            conn.execute(
+                "INSERT INTO test_configs (project, data) VALUES (?, ?) "
+                "ON CONFLICT(project) DO UPDATE SET data = excluded.data",
+                (self._check(project), config.model_dump_json()),
+            )
         return config
 
     def delete(self, project: str) -> bool:
-        path = self._path(project)
-        if not path.exists():
-            return False
-        path.unlink()
-        return True
+        with self.db.connect() as conn:
+            cur = conn.execute(
+                "DELETE FROM test_configs WHERE project = ?", (self._check(project),)
+            )
+        return cur.rowcount > 0
 
 
 def project_of(card_key: str) -> str:
@@ -496,9 +491,9 @@ async def stop_app(store: TestStore, key: str) -> TestRun | None:
     return run
 
 
-async def stop_all(store_root: Path) -> None:
+async def stop_all(store: TestStore) -> None:
     for key in list(APPS):
-        await stop_app(TestStore(store_root), key)
+        await stop_app(store, key)
 
 
 async def wait_ready(process, url: str, timeout: float, probe=probe_url) -> bool:

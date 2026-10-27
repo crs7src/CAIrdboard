@@ -23,9 +23,11 @@ const open = async () => userEvent.click(await screen.findByRole('button', { nam
 test('is collapsed with a start button; starting shows progress', async () => {
   const fetchMock = mockApi({
     '/api/cards/AB-1/test': NONE,
+    '/api/cards/AB-1/test/config': { body: CONFIG },
     'POST /api/cards/AB-1/test': { status: 202, body: testRun({ state: 'preparing', links: [] }) },
   })
   render(<Test cardKey="AB-1" />)
+  await screen.findByText('saved settings')
   const header = await screen.findByRole('button', { name: HEADER })
   expect(header).toHaveAttribute('aria-expanded', 'false')
   await userEvent.click(screen.getByRole('button', { name: 'Start test' }))
@@ -59,6 +61,7 @@ test('polls while preparing, then shows links that open in a new tab', async () 
 test('Stop app stops it and allows testing again', async () => {
   const fetchMock = mockApi({
     '/api/cards/AB-1/test': { body: testRun() },
+    '/api/cards/AB-1/test/config': { body: CONFIG },
     'DELETE /api/cards/AB-1/test': { body: testRun({ state: 'stopped' }) },
   })
   render(<Test cardKey="AB-1" />)
@@ -70,8 +73,12 @@ test('Stop app stops it and allows testing again', async () => {
 })
 
 test('a failure shows the error and can be retried', async () => {
-  mockApi({ '/api/cards/AB-1/test': { body: testRun({ state: 'failed', links: [], error: 'port in use' }) } })
+  mockApi({
+    '/api/cards/AB-1/test': { body: testRun({ state: 'failed', links: [], error: 'port in use' }) },
+    '/api/cards/AB-1/test/config': { body: CONFIG },
+  })
   render(<Test cardKey="AB-1" />)
+  await screen.findByText('saved settings')
   await open()
   expect(await screen.findByText('port in use')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Test again' })).toBeEnabled()
@@ -132,4 +139,12 @@ test('a run from saved settings just says it is starting the app', async () => {
   await open()
   expect(await screen.findByText('Starting app...')).toBeInTheDocument()
   expect(screen.queryByText(/Working out how to run the app/)).not.toBeInTheDocument()
+})
+
+test('Start test is disabled until start settings exist, but Start with AI works', async () => {
+  mockApi({ '/api/cards/AB-1/test': NONE })
+  render(<Test cardKey="AB-1" />)
+  await open()
+  expect(await screen.findByRole('button', { name: 'Start test' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'Start with AI' })).toBeEnabled()
 })

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 import respx
+from dbutil import db
 from fastapi.testclient import TestClient
 from test_implementation import (
     approve_plan,
@@ -95,10 +96,10 @@ def dirs(env, monkeypatch):
 
 async def run_it(tmp_path, work, ai, ready_timeout=15, **kw):
     if sh(work, "git", "branch", "--list", "AB-1_add_dark_mode"):
-        impl = implementer.ImplementationStore(tmp_path / "impls").latest("AB-1")
+        impl = implementer.ImplementationStore(db()).latest("AB-1")
     else:
         impl = make_impl(tmp_path, work)
-    store = tester.TestStore(tmp_path / "test_runs")
+    store = tester.TestStore(db(), tmp_path / "test_runs")
     run = store.create("AB-1", impl, 1)
     tester.ACTIVE.add("AB-1")
     implementer.ACTIVE_REPOS.add(str(work))
@@ -261,7 +262,7 @@ async def test_dirty_repo_is_refused(env):
 
 
 def test_stale_runs_are_recovered(tmp_path):
-    store = tester.TestStore(tmp_path)
+    store = tester.TestStore(db(), tmp_path)
     impl = implementer.Implementation(
         card_key="AB-1", version=1, plan_version=1, state="completed",
         branch="b", base_commit="a", created_at="t", updated_at="t",
@@ -292,7 +293,7 @@ def allow_local():
 
 
 def make_review(tmp_path, impl, state="clean"):
-    store = reviewer.ReviewStore(tmp_path / "reviews")
+    store = reviewer.ReviewStore(db())
     run = store.create("AB-1", impl)
     run.state = state
     store.save(run)
@@ -427,7 +428,7 @@ def prompt_of(ai):
 async def test_successful_run_saves_the_settings_per_project(env):
     tmp_path, work = env
     port = free_port()
-    configs = tester.ConfigStore(tmp_path / "test_configs")
+    configs = tester.ConfigStore(db())
     store, run = await run_it(tmp_path, work, FakeTester(reply(port)), configs=configs)
     try:
         assert run.state == "running", run.error
@@ -440,7 +441,7 @@ async def test_successful_run_saves_the_settings_per_project(env):
 
 async def test_failed_run_does_not_save(env):
     tmp_path, work = env
-    configs = tester.ConfigStore(tmp_path / "test_configs")
+    configs = tester.ConfigStore(db())
     _, run = await run_it(
         tmp_path, work, FakeTester(reply(1, start_command="exit 1")),
         ready_timeout=3, configs=configs,
@@ -452,7 +453,7 @@ async def test_saved_settings_start_without_the_ai(env):
     tmp_path, work = env
     port = free_port()
     saved = [tester.AppSpec(**app_spec(port))]
-    configs = tester.ConfigStore(tmp_path / "test_configs")
+    configs = tester.ConfigStore(db())
     store, run = await run_it(tmp_path, work, NoAi(), configs=configs, saved=saved)
     try:
         assert run.state == "running", run.error
@@ -476,7 +477,7 @@ async def test_saved_links_reuse_the_previous_runs_links(env):
 
 async def test_failed_saved_start_keeps_the_saved_settings(env):
     tmp_path, work = env
-    configs = tester.ConfigStore(tmp_path / "test_configs")
+    configs = tester.ConfigStore(db())
     saved = [tester.AppSpec(**app_spec(1, start_command="exit 1"))]
     configs.save("AB", saved, "AB-1")
     _, run = await run_it(
@@ -489,15 +490,16 @@ async def test_failed_saved_start_keeps_the_saved_settings(env):
 async def test_problem_prompt_has_the_report_settings_and_logs_and_saves_the_fix(env):
     tmp_path, work = env
     port = free_port()
-    store = tester.TestStore(tmp_path / "test_runs")
+    store = tester.TestStore(db(), tmp_path / "test_runs")
     impl = make_impl(tmp_path, work)
     old = store.create("AB-1", impl, 1)
     old.state, old.error = "failed", "boom"
     old.apps = [tester.AppSpec(**app_spec(1, "api", start_command="old-cmd"))]
     store.save(old)
+    store.log_path(old, 0).parent.mkdir(parents=True, exist_ok=True)
     store.log_path(old, 0).write_text("line one\nOOPS-LOG-LINE\n")
 
-    configs = tester.ConfigStore(tmp_path / "test_configs")
+    configs = tester.ConfigStore(db())
     ai = FakeTester(reply(port))
     run = store.create("AB-1", impl, 1, "feedback", "the API never starts")
     tester.ACTIVE.add("AB-1")
@@ -519,7 +521,7 @@ async def test_problem_prompt_has_the_report_settings_and_logs_and_saves_the_fix
 
 
 def test_config_store_round_trip_and_rejects_bad_projects(tmp_path):
-    configs = tester.ConfigStore(tmp_path)
+    configs = tester.ConfigStore(db())
     assert configs.load("AB") is None
     configs.save("AB", [tester.AppSpec(**app_spec(5))], "AB-1")
     assert configs.load("AB").apps[0].name == "app"
@@ -539,9 +541,7 @@ def test_api_uses_saved_settings_then_replan_uses_the_ai(client, env, ai):
     port = free_port()
     ai.stdout = reply(port)
     assert client.get("/api/cards/AB-1/test/config").status_code == 404
-    tester.ConfigStore(tmp_path / "test_configs").save(
-        "AB", [tester.AppSpec(**app_spec(port))], "AB-9"
-    )
+    tester.ConfigStore(db()).save("AB", [tester.AppSpec(**app_spec(port))], "AB-9")
     assert client.get("/api/cards/AB-1/test/config").json()["saved_from"] == "AB-9"
 
     assert client.post("/api/cards/AB-1/test").json()["source"] == "saved"
@@ -647,3 +647,11 @@ def test_settings_need_a_project_with_a_repo(client):
     r = client.put("/api/test-configs/ZZ", json={"apps": [app_spec(1)]})
     assert r.status_code == 404
     assert client.put("/api/test-configs/..%2Fx", json={"apps": []}).status_code == 404
+
+
+def test_lists_projects_that_have_settings(client, env):
+    assert client.get("/api/test-configs").json() == []
+    client.put("/api/test-configs/AB", json={"apps": [app_spec(5)]})
+    assert client.get("/api/test-configs").json() == ["AB"]
+    client.delete("/api/test-configs/AB")
+    assert client.get("/api/test-configs").json() == []

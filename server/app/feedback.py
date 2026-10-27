@@ -1,13 +1,11 @@
-import json
-import os
 import uuid
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, field_validator, model_validator
 
 from app import skills
+from app.db import RunStore, check_key
 from app.implementer import (
     ACTIVE_REPOS,
     DENIED_TOOLS,
@@ -19,7 +17,6 @@ from app.implementer import (
 )
 from app.jira import Card
 from app.planner import (
-    CARD_KEY_RE,
     CommandNotFound,
     CommandTimeout,
     format_comments,
@@ -91,35 +88,27 @@ class FeedbackRun(BaseModel):
     updated_at: str
 
 
-class FeedbackStore:
-    """<root>/<KEY>/comments.json holds the comments; <root>/<KEY>/runs/<n>.json the runs."""
+class FeedbackStore(RunStore[FeedbackRun]):
+    """Runs are versioned rows; the comments for a card live in their own table."""
 
-    def __init__(self, root: Path):
-        self.root = root
-
-    def _dir(self, key: str) -> Path:
-        if not CARD_KEY_RE.match(key):
-            raise ValueError(f"Invalid card key: {key}")
-        return self.root / key
-
-    @staticmethod
-    def _write(path: Path, text: str) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(text)
-        os.replace(tmp, path)
+    kind = "feedback"
+    model = FeedbackRun
 
     def comments(self, key: str) -> list[FeedbackComment]:
-        path = self._dir(key) / "comments.json"
-        if not path.exists():
-            return []
-        return [FeedbackComment.model_validate(c) for c in json.loads(path.read_text())]
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                "SELECT data FROM comments WHERE card_key = ? ORDER BY rowid",
+                (check_key(key),),
+            ).fetchall()
+        return [FeedbackComment.model_validate_json(r[0]) for r in rows]
 
     def save_comments(self, key: str, comments: list[FeedbackComment]) -> None:
-        self._write(
-            self._dir(key) / "comments.json",
-            json.dumps([c.model_dump() for c in comments], indent=2),
-        )
+        with self.db.connect() as conn:
+            conn.execute("DELETE FROM comments WHERE card_key = ?", (check_key(key),))
+            conn.executemany(
+                "INSERT INTO comments (card_key, id, data) VALUES (?, ?, ?)",
+                [(key, c.id, c.model_dump_json()) for c in comments],
+            )
 
     def add(self, key: str, data: CommentInput) -> FeedbackComment:
         comment = FeedbackComment(
@@ -154,40 +143,20 @@ class FeedbackStore:
                 c.status, c.resolved_in = "resolved", version
         self.save_comments(key, comments)
 
-    def versions(self, key: str) -> list[FeedbackRun]:
-        d = self._dir(key) / "runs"
-        if not d.exists():
-            return []
-        runs = [
-            FeedbackRun.model_validate_json(p.read_text()) for p in d.glob("*.json")
-        ]
-        return sorted(runs, key=lambda r: r.version)
-
-    def latest(self, key: str) -> FeedbackRun | None:
-        runs = self.versions(key)
-        return runs[-1] if runs else None
-
     def create(self, key: str, impl: Implementation) -> FeedbackRun:
-        latest = self.latest(key)
-        now = _now()
-        run = FeedbackRun(
-            card_key=key,
-            version=(latest.version + 1) if latest else 1,
-            state="running",
-            branch=impl.branch,
-            comments=[c for c in self.comments(key) if c.status == "pending"],
-            created_at=now,
-            updated_at=now,
-        )
-        return self.save(run)
+        def build(version: int, stamp: str):
+            run = FeedbackRun(
+                card_key=key,
+                version=version,
+                state="running",
+                branch=impl.branch,
+                comments=[c for c in self.comments(key) if c.status == "pending"],
+                created_at=stamp,
+                updated_at=stamp,
+            )
+            return run
 
-    def save(self, run: FeedbackRun) -> FeedbackRun:
-        run.updated_at = _now()
-        self._write(
-            self._dir(run.card_key) / "runs" / f"{run.version}.json",
-            run.model_dump_json(indent=2),
-        )
-        return run
+        return self.create_run(key, build)
 
 
 # Card keys with a feedback run in this server process (repos are tracked in the

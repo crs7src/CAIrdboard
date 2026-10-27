@@ -1,6 +1,7 @@
 import httpx
 import pytest
 import respx
+from dbutil import db
 from fastapi.testclient import TestClient
 
 from app import planner
@@ -425,7 +426,7 @@ def test_card_not_found_and_bad_key(client):
 
 @respx.mock
 def test_create_plan_runs_ai_and_stores_result(client, runner, env):
-    tmp_path, repo = env
+    _, repo = env
     mock_issue(description={"type": "doc", "content": []})
     response = client.post("/api/cards/AB-1/plan")
     assert response.status_code == 202
@@ -438,7 +439,7 @@ def test_create_plan_runs_ai_and_stores_result(client, runner, env):
     assert plan["jira_status"] == "DEV In Progress"
     _args, cwd, _timeout = runner.calls[0]
     assert cwd == str(repo)
-    assert (tmp_path / "plans" / "AB-1" / "1.json").exists()
+    assert planner.PlanStore(db()).latest("AB-1").version == 1
     assert planner.ACTIVE == set()
 
 
@@ -510,8 +511,7 @@ def test_conflict_while_running(client, runner, env):
 
 @respx.mock
 def test_stale_running_plan_is_recovered(client, env):
-    tmp_path, _ = env
-    store = planner.PlanStore(tmp_path / "plans")
+    store = planner.PlanStore(db())
     store.create("AB-1", "Backlog", None)  # 'running' but nothing is active
     plan = client.get("/api/cards/AB-1/plan").json()
     assert plan["state"] == "failed"
@@ -575,4 +575,4 @@ def test_plan_requires_jira(client, monkeypatch):
 
 def test_store_rejects_path_traversal(tmp_path):
     with pytest.raises(ValueError):
-        planner.PlanStore(tmp_path).latest("../evil")
+        planner.PlanStore(db()).latest("../evil")

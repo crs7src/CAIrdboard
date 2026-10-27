@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     jira_api_token: str = ""
     jira_credentials_file: Path = Path("data/jira.json")
     ai_config_file: Path = Path("data/ai_config.json")
+    db_file: Path = Path("data/cairdboard.db")
+    # Folders of JSON files written before the SQLite database; imported once at startup.
     plans_dir: Path = Path("data/plans")
     skills_dir: Path = Path("data/skills")
     copilot_command: str = "copilot"

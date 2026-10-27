@@ -1,6 +1,4 @@
 import asyncio
-import os
-import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -9,13 +7,13 @@ from typing import Literal
 from pydantic import BaseModel
 
 from app import skills
+from app.db import RunStore
 from app.jira import Card
 from app.jira import is_reopened_status as is_reopened
 from app.skills import SkillError
 
 PlanState = Literal["running", "ready", "failed", "approved", "rejected"]
 
-CARD_KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]*-\d+$")
 
 # Planning must never change the target repo: only file-reading tools are exposed.
 READ_ONLY_TOOLS = ["view", "grep", "glob"]
@@ -174,52 +172,24 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-class PlanStore:
-    """One JSON file per plan version: <root>/<CARD-KEY>/<version>.json."""
-
-    def __init__(self, root: Path):
-        self.root = root
-
-    def _dir(self, key: str) -> Path:
-        if not CARD_KEY_RE.match(key):
-            raise ValueError(f"Invalid card key: {key}")
-        return self.root / key
-
-    def versions(self, key: str) -> list[Plan]:
-        d = self._dir(key)
-        if not d.exists():
-            return []
-        plans = [Plan.model_validate_json(p.read_text()) for p in d.glob("*.json")]
-        return sorted(plans, key=lambda p: p.version)
-
-    def latest(self, key: str) -> Plan | None:
-        plans = self.versions(key)
-        return plans[-1] if plans else None
+class PlanStore(RunStore[Plan]):
+    kind = "plan"
+    model = Plan
 
     def create(self, key: str, jira_status: str, feedback: str | None) -> Plan:
-        latest = self.latest(key)
-        now = _now()
-        plan = Plan(
-            card_key=key,
-            version=(latest.version + 1) if latest else 1,
-            state="running",
-            jira_status=jira_status,
-            feedback=feedback,
-            created_at=now,
-            updated_at=now,
-        )
-        self.save(plan)
-        return plan
+        def build(version: int, stamp: str):
+            plan = Plan(
+                card_key=key,
+                version=version,
+                state="running",
+                jira_status=jira_status,
+                feedback=feedback,
+                created_at=stamp,
+                updated_at=stamp,
+            )
+            return plan
 
-    def save(self, plan: Plan) -> Plan:
-        plan.updated_at = _now()
-        d = self._dir(plan.card_key)
-        d.mkdir(parents=True, exist_ok=True)
-        path = d / f"{plan.version}.json"
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(plan.model_dump_json(indent=2))
-        os.replace(tmp, path)
-        return plan
+        return self.create_run(key, build)
 
 
 # Card keys with a generation running in this server process. The caller adds

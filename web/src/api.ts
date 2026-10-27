@@ -327,6 +327,12 @@ export async function fetchTestConfig(key: string): Promise<TestConfig | null> {
 
 export type TestApp = TestRun['apps'][number]
 
+export async function fetchConfiguredTestProjects(): Promise<string[]> {
+  const response = await fetch('/api/test-configs')
+  if (!response.ok) throw await failure(response)
+  return response.json()
+}
+
 export async function fetchProjectTestConfig(project: string): Promise<TestConfig | null> {
   const response = await fetch(`/api/test-configs/${project}`)
   if (response.status === 404) return null

@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 import respx
+from dbutil import db
 from fastapi.testclient import TestClient
 from test_implementation import (
     approve_plan,
@@ -222,7 +223,7 @@ def test_submit_conflicts_when_busy(client, env):
 def test_stale_running_run_is_marked_failed(client, env):
     tmp_path, work = env
     impl = make_impl(tmp_path, work)
-    feedback.FeedbackStore(tmp_path / "feedback").create("AB-1", impl)
+    feedback.FeedbackStore(db()).create("AB-1", impl)
     run = client.get("/api/cards/AB-1/feedback").json()["run"]
     assert run["state"] == "failed" and "Interrupted" in run["error"]
 
@@ -231,7 +232,7 @@ def test_stale_running_run_is_marked_failed(client, env):
 
 
 async def run_fb(tmp_path, work, impl, ai):
-    store = feedback.FeedbackStore(tmp_path / "feedback")
+    store = feedback.FeedbackStore(db())
     store.add(
         "AB-1", feedback.CommentInput(text="old side", file="a.py", line=4, side="old")
     )

@@ -1,4 +1,3 @@
-import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -7,9 +6,9 @@ from typing import Literal
 from pydantic import BaseModel
 
 from app import skills
+from app.db import RunStore
 from app.jira import Card
 from app.planner import (
-    CARD_KEY_RE,
     READ_ONLY_TOOLS,
     CommandNotFound,
     CommandTimeout,
@@ -72,53 +71,23 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-class ImplementationStore:
-    """One JSON file per run: <root>/<CARD-KEY>/<version>.json."""
-
-    def __init__(self, root: Path):
-        self.root = root
-
-    def _dir(self, key: str) -> Path:
-        if not CARD_KEY_RE.match(key):
-            raise ValueError(f"Invalid card key: {key}")
-        return self.root / key
-
-    def versions(self, key: str) -> list[Implementation]:
-        d = self._dir(key)
-        if not d.exists():
-            return []
-        runs = [
-            Implementation.model_validate_json(p.read_text()) for p in d.glob("*.json")
-        ]
-        return sorted(runs, key=lambda r: r.version)
-
-    def latest(self, key: str) -> Implementation | None:
-        runs = self.versions(key)
-        return runs[-1] if runs else None
+class ImplementationStore(RunStore[Implementation]):
+    kind = "implementation"
+    model = Implementation
 
     def create(self, key: str, plan_version: int) -> Implementation:
-        latest = self.latest(key)
-        now = _now()
-        run = Implementation(
-            card_key=key,
-            version=(latest.version + 1) if latest else 1,
-            plan_version=plan_version,
-            state="running",
-            created_at=now,
-            updated_at=now,
-        )
-        self.save(run)
-        return run
+        def build(version: int, stamp: str):
+            run = Implementation(
+                card_key=key,
+                version=version,
+                plan_version=plan_version,
+                state="running",
+                created_at=stamp,
+                updated_at=stamp,
+            )
+            return run
 
-    def save(self, run: Implementation) -> Implementation:
-        run.updated_at = _now()
-        d = self._dir(run.card_key)
-        d.mkdir(parents=True, exist_ok=True)
-        path = d / f"{run.version}.json"
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(run.model_dump_json(indent=2))
-        os.replace(tmp, path)
-        return run
+        return self.create_run(key, build)
 
 
 # Card keys and repo paths with a run in this server process. The caller adds them

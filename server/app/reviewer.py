@@ -1,4 +1,3 @@
-import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -6,6 +5,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from app import skills
+from app.db import RunStore
 from app.implementer import (
     ACTIVE_REPOS,
     DENIED_TOOLS,
@@ -17,7 +17,6 @@ from app.implementer import (
 )
 from app.jira import Card
 from app.planner import (
-    CARD_KEY_RE,
     CommandNotFound,
     CommandTimeout,
     format_comments,
@@ -52,53 +51,25 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-class ReviewStore:
-    """One JSON file per run: <root>/<CARD-KEY>/<version>.json."""
-
-    def __init__(self, root: Path):
-        self.root = root
-
-    def _dir(self, key: str) -> Path:
-        if not CARD_KEY_RE.match(key):
-            raise ValueError(f"Invalid card key: {key}")
-        return self.root / key
-
-    def versions(self, key: str) -> list[Review]:
-        d = self._dir(key)
-        if not d.exists():
-            return []
-        runs = [Review.model_validate_json(p.read_text()) for p in d.glob("*.json")]
-        return sorted(runs, key=lambda r: r.version)
-
-    def latest(self, key: str) -> Review | None:
-        runs = self.versions(key)
-        return runs[-1] if runs else None
+class ReviewStore(RunStore[Review]):
+    kind = "review"
+    model = Review
 
     def create(self, key: str, impl: Implementation) -> Review:
-        latest = self.latest(key)
-        now = _now()
-        run = Review(
-            card_key=key,
-            version=(latest.version + 1) if latest else 1,
-            implementation_version=impl.version,
-            state="running",
-            branch=impl.branch,
-            base_commit=impl.base_commit,
-            created_at=now,
-            updated_at=now,
-        )
-        self.save(run)
-        return run
+        def build(version: int, stamp: str):
+            run = Review(
+                card_key=key,
+                version=version,
+                implementation_version=impl.version,
+                state="running",
+                branch=impl.branch,
+                base_commit=impl.base_commit,
+                created_at=stamp,
+                updated_at=stamp,
+            )
+            return run
 
-    def save(self, run: Review) -> Review:
-        run.updated_at = _now()
-        d = self._dir(run.card_key)
-        d.mkdir(parents=True, exist_ok=True)
-        path = d / f"{run.version}.json"
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(run.model_dump_json(indent=2))
-        os.replace(tmp, path)
-        return run
+        return self.create_run(key, build)
 
 
 # Card keys with a review in this server process (repos are tracked in the

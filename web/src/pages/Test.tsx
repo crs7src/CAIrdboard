@@ -120,7 +120,7 @@ export default function Test({ cardKey }: { cardKey: string }) {
             <span onClick={(e) => e.stopPropagation()}>
               <StepButton
                 label={run ? 'Test again' : 'Start test'}
-                status={preparing ? 'running' : busy ? 'blocked' : 'next'}
+                status={preparing ? 'running' : busy || !config ? 'blocked' : 'next'}
                 onRun={() => act(() => startTest(cardKey))}
               />
             </span>

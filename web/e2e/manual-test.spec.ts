@@ -28,6 +28,13 @@ test('start the manual test, open a link, and stop the app', async ({ page }) =>
   await page.route('**/api/implementations', (route) => route.fulfill({ json: { 'AB-1': 'completed' } }))
   await page.route('**/api/reviews', (route) => route.fulfill({ json: { 'AB-1': 'clean' } }))
   await page.route('**/api/tests', (route) => route.fulfill({ json: run ? { 'AB-1': run.state } : {} }))
+  await page.route('**/api/test-configs', (route) => route.fulfill({ json: [] }))
+  // The AI's result is saved once the app has run.
+  await page.route('**/api/cards/AB-1/test/config', (route) =>
+    run && run.state !== 'preparing'
+      ? route.fulfill({ json: { project: 'AB', apps: run.apps, saved_from: 'AB-1', saved_at: 'now' } })
+      : route.fulfill({ status: 404, json: { detail: 'none' } }),
+  )
   await page.route('**/api/cards/AB-1/plan', (route) =>
     route.fulfill({
       json: { ...base, state: 'approved', plan: '1. Do it', error: null, history: [], feedback: null },
@@ -76,9 +83,11 @@ test('start the manual test, open a link, and stop the app', async ({ page }) =>
 
   await page.goto('/')
   await expect(page.getByText('Test: available')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Test', exact: true })).toBeDisabled()
   await page.goto('/cards/AB-1')
   await page.getByRole('button', { name: /^Test not started/ }).click()
-  await page.getByRole('button', { name: 'Start test', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Start test', exact: true })).toBeDisabled()
+  await page.getByRole('button', { name: 'Start with AI' }).click()
   await expect(page.getByText(/Working out how to run the app/)).toBeVisible()
 
   const link = page.getByRole('link', { name: 'Settings page' })
@@ -119,6 +128,7 @@ test('saved settings are used, and a problem report restarts with the fix', asyn
   await page.route('**/api/implementations', (route) => route.fulfill({ json: { 'AB-1': 'completed' } }))
   await page.route('**/api/reviews', (route) => route.fulfill({ json: { 'AB-1': 'clean' } }))
   await page.route('**/api/tests', (route) => route.fulfill({ json: run ? { 'AB-1': run.state } : {} }))
+  await page.route('**/api/test-configs', (route) => route.fulfill({ json: ['AB'] }))
   await page.route('**/api/cards/AB-1/plan', (route) =>
     route.fulfill({ json: { ...base, state: 'approved', plan: '1. Do it', error: null, history: [], feedback: null } }),
   )

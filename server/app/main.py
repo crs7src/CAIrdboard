@@ -8,13 +8,34 @@ from pydantic import BaseModel, Field, field_validator
 from app import changes, feedback, implementer, jira, planner, reviewer, skills, tester
 from app.ai_config import AiConfig, load_ai_config, save_ai_config
 from app.config import Settings, get_settings, save_credentials
+from app.db import CARD_KEY_RE, Database
+from app.legacy_import import import_legacy_files
+
+
+def _db(settings: Settings) -> Database:
+    return Database.at(settings.db_file)
+
+
+def _test_store(settings: Settings) -> tester.TestStore:
+    return tester.TestStore(_db(settings), settings.test_runs_dir)
+
+
+def _states(store, recover) -> dict[str, str]:
+    """Latest state of every card that has a run in the store."""
+    states: dict[str, str] = {}
+    for key in store.card_keys():
+        latest = recover(store, store.latest(key))
+        if latest:
+            states[key] = latest.state
+    return states
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    import_legacy_files(get_settings())
     yield
     # Apps started for manual testing must not outlive the server.
-    await tester.stop_all(get_settings().test_runs_dir)
+    await tester.stop_all(_test_store(get_settings()))
 
 
 app = FastAPI(title="AI Card Board", lifespan=lifespan)
@@ -106,7 +127,7 @@ def _require_jira(settings: Settings) -> None:
 
 
 def _valid_key(key: str) -> str:
-    if not planner.CARD_KEY_RE.match(key):
+    if not CARD_KEY_RE.match(key):
         raise HTTPException(404, "Card not found")
     return key
 
@@ -243,29 +264,15 @@ def list_dirs(path: str | None = None) -> DirListing:
 @app.get("/api/plans")
 def plan_states(settings: SettingsDep) -> dict[str, str]:
     """Latest plan state for every card that has one."""
-    store = planner.PlanStore(settings.plans_dir)
-    states: dict[str, str] = {}
-    if settings.plans_dir.exists():
-        for d in sorted(settings.plans_dir.iterdir()):
-            if d.is_dir() and planner.CARD_KEY_RE.match(d.name):
-                latest = planner.recover_stale(store, store.latest(d.name))
-                if latest:
-                    states[d.name] = latest.state
-    return states
+    return _states(planner.PlanStore(_db(settings)), planner.recover_stale)
 
 
 @app.get("/api/implementations")
 def implementation_states(settings: SettingsDep) -> dict[str, str]:
     """Latest implementation state for every card that has one."""
-    store = implementer.ImplementationStore(settings.implementations_dir)
-    states: dict[str, str] = {}
-    if settings.implementations_dir.exists():
-        for d in sorted(settings.implementations_dir.iterdir()):
-            if d.is_dir() and planner.CARD_KEY_RE.match(d.name):
-                latest = implementer.recover_stale(store, store.latest(d.name))
-                if latest:
-                    states[d.name] = latest.state
-    return states
+    return _states(
+        implementer.ImplementationStore(_db(settings)), implementer.recover_stale
+    )
 
 
 class PlanRequest(BaseModel):
@@ -302,7 +309,7 @@ async def create_plan(
     if not Path(repo).is_dir():
         raise HTTPException(422, f"Repo path for {card.project} does not exist: {repo}")
 
-    store = planner.PlanStore(settings.plans_dir)
+    store = planner.PlanStore(_db(settings))
     previous = planner.recover_stale(store, store.latest(key))
     if key in planner.ACTIVE or (previous and previous.state == "running"):
         raise HTTPException(409, "A plan is already being generated for this card")
@@ -325,7 +332,7 @@ async def create_plan(
 
 
 def _latest_plan(settings: Settings, key: str) -> planner.Plan:
-    store = planner.PlanStore(settings.plans_dir)
+    store = planner.PlanStore(_db(settings))
     plan = planner.recover_stale(store, store.latest(_valid_key(key)))
     if plan is None:
         raise HTTPException(404, "No plan exists for this card")
@@ -344,7 +351,7 @@ def _decide(settings: Settings, key: str, state: planner.PlanState) -> planner.P
             409, f"Only a ready plan can be decided (it is {plan.state})"
         )
     plan.state = state
-    return planner.PlanStore(settings.plans_dir).save(plan)
+    return planner.PlanStore(_db(settings)).save(plan)
 
 
 @app.post("/api/cards/{key}/plan/approve")
@@ -374,13 +381,13 @@ async def start_implementation(
 ) -> implementer.Implementation:
     """Implement the approved plan on a new branch in the project's repo."""
     key = _valid_key(key)
-    plan = planner.PlanStore(settings.plans_dir).latest(key)
+    plan = planner.PlanStore(_db(settings)).latest(key)
     if plan is None or plan.state != "approved" or not plan.plan:
         raise HTTPException(409, "Only an approved plan can be implemented")
     card = await _load_card(settings, key)
     repo = _repo_for_key(settings, key)
 
-    store = implementer.ImplementationStore(settings.implementations_dir)
+    store = implementer.ImplementationStore(_db(settings))
     previous = implementer.recover_stale(store, store.latest(key))
     if key in implementer.ACTIVE or (previous and previous.state == "running"):
         raise HTTPException(409, "This card is already being implemented")
@@ -412,7 +419,7 @@ async def get_implementation(
     key: str, settings: SettingsDep, runner: RunnerDep
 ) -> implementer.Implementation:
     key = _valid_key(key)
-    store = implementer.ImplementationStore(settings.implementations_dir)
+    store = implementer.ImplementationStore(_db(settings))
     run = implementer.recover_stale(store, store.latest(key))
     if run is None:
         raise HTTPException(404, "No implementation exists for this card")
@@ -430,15 +437,7 @@ async def get_implementation(
 @app.get("/api/reviews")
 def review_states(settings: SettingsDep) -> dict[str, str]:
     """Latest review state for every card that has one."""
-    store = reviewer.ReviewStore(settings.reviews_dir)
-    states: dict[str, str] = {}
-    if settings.reviews_dir.exists():
-        for d in sorted(settings.reviews_dir.iterdir()):
-            if d.is_dir() and planner.CARD_KEY_RE.match(d.name):
-                latest = reviewer.recover_stale(store, store.latest(d.name))
-                if latest:
-                    states[d.name] = latest.state
-    return states
+    return _states(reviewer.ReviewStore(_db(settings)), reviewer.recover_stale)
 
 
 @app.post("/api/cards/{key}/review", status_code=202)
@@ -450,17 +449,17 @@ async def start_review(
 ) -> reviewer.Review:
     """Review the completed implementation in a fresh AI session; it may commit fixes."""
     key = _valid_key(key)
-    impl_store = implementer.ImplementationStore(settings.implementations_dir)
+    impl_store = implementer.ImplementationStore(_db(settings))
     impl = impl_store.latest(key)
     if impl is None or impl.state != "completed" or not impl.branch:
         raise HTTPException(409, "Only a completed implementation can be reviewed")
-    plan = planner.PlanStore(settings.plans_dir).latest(key)
+    plan = planner.PlanStore(_db(settings)).latest(key)
     if plan is None or not plan.plan:
         raise HTTPException(409, "The card has no plan to review against")
     card = await _load_card(settings, key)
     repo = _repo_for_key(settings, key)
 
-    store = reviewer.ReviewStore(settings.reviews_dir)
+    store = reviewer.ReviewStore(_db(settings))
     previous = reviewer.recover_stale(store, store.latest(key))
     if (
         key in reviewer.ACTIVE
@@ -494,7 +493,7 @@ async def start_review(
 @app.get("/api/cards/{key}/review")
 async def get_review(key: str, settings: SettingsDep) -> reviewer.Review:
     key = _valid_key(key)
-    store = reviewer.ReviewStore(settings.reviews_dir)
+    store = reviewer.ReviewStore(_db(settings))
     run = reviewer.recover_stale(store, store.latest(key))
     if run is None:
         raise HTTPException(404, "No review exists for this card")
@@ -516,7 +515,7 @@ def _feedback_data(store: feedback.FeedbackStore, key: str) -> FeedbackData:
 @app.get("/api/cards/{key}/feedback")
 def get_feedback(key: str, settings: SettingsDep) -> FeedbackData:
     key = _valid_key(key)
-    return _feedback_data(feedback.FeedbackStore(settings.feedback_dir), key)
+    return _feedback_data(feedback.FeedbackStore(_db(settings)), key)
 
 
 @app.post("/api/cards/{key}/feedback/comments", status_code=201)
@@ -524,7 +523,7 @@ def add_feedback_comment(
     key: str, body: feedback.CommentInput, settings: SettingsDep
 ) -> feedback.FeedbackComment:
     key = _valid_key(key)
-    return feedback.FeedbackStore(settings.feedback_dir).add(key, body)
+    return feedback.FeedbackStore(_db(settings)).add(key, body)
 
 
 class CommentEdit(BaseModel):
@@ -543,9 +542,7 @@ def edit_feedback_comment(
     key: str, comment_id: str, body: CommentEdit, settings: SettingsDep
 ) -> feedback.FeedbackComment:
     key = _valid_key(key)
-    comment = feedback.FeedbackStore(settings.feedback_dir).edit(
-        key, comment_id, body.text
-    )
+    comment = feedback.FeedbackStore(_db(settings)).edit(key, comment_id, body.text)
     if comment is None:
         raise HTTPException(404, "No pending comment with that id")
     return comment
@@ -554,7 +551,7 @@ def edit_feedback_comment(
 @app.delete("/api/cards/{key}/feedback/comments/{comment_id}", status_code=204)
 def delete_feedback_comment(key: str, comment_id: str, settings: SettingsDep) -> None:
     key = _valid_key(key)
-    if not feedback.FeedbackStore(settings.feedback_dir).delete(key, comment_id):
+    if not feedback.FeedbackStore(_db(settings)).delete(key, comment_id):
         raise HTTPException(404, "No pending comment with that id")
 
 
@@ -567,13 +564,13 @@ async def submit_feedback(
 ) -> feedback.FeedbackRun:
     """Hand the pending review comments to a fresh AI session that makes the edits."""
     key = _valid_key(key)
-    impl = implementer.ImplementationStore(settings.implementations_dir).latest(key)
+    impl = implementer.ImplementationStore(_db(settings)).latest(key)
     if impl is None or impl.state != "completed" or not impl.branch:
         raise HTTPException(409, "The card has no completed implementation to change")
-    plan = planner.PlanStore(settings.plans_dir).latest(key)
+    plan = planner.PlanStore(_db(settings)).latest(key)
     if plan is None or not plan.plan:
         raise HTTPException(409, "The card has no plan")
-    store = feedback.FeedbackStore(settings.feedback_dir)
+    store = feedback.FeedbackStore(_db(settings))
     if not any(c.status == "pending" for c in store.comments(key)):
         raise HTTPException(409, "Add at least one comment first")
     card = await _load_card(settings, key)
@@ -612,14 +609,7 @@ async def submit_feedback(
 
 @app.get("/api/tests")
 def test_states(settings: SettingsDep) -> dict[str, str]:
-    store = tester.TestStore(settings.test_runs_dir)
-    states: dict[str, str] = {}
-    if settings.test_runs_dir.exists():
-        for d in sorted(settings.test_runs_dir.iterdir()):
-            run = tester.recover_stale(store, store.latest(d.name))
-            if run:
-                states[d.name] = run.state
-    return states
+    return _states(_test_store(settings), tester.recover_stale)
 
 
 class StartTestBody(BaseModel):
@@ -653,13 +643,13 @@ class TestProblemBody(BaseModel):
 
 async def _test_context(settings: Settings, key: str):
     """Everything a test run needs, or an HTTP error if the card is not ready."""
-    impl = implementer.ImplementationStore(settings.implementations_dir).latest(key)
+    impl = implementer.ImplementationStore(_db(settings)).latest(key)
     if impl is None or impl.state != "completed" or not impl.branch:
         raise HTTPException(409, "The card has no completed implementation to test")
-    review = reviewer.ReviewStore(settings.reviews_dir).latest(key)
+    review = reviewer.ReviewStore(_db(settings)).latest(key)
     if review is None or review.state != "clean":
         raise HTTPException(409, "The review must be clean before testing")
-    plan = planner.PlanStore(settings.plans_dir).latest(key)
+    plan = planner.PlanStore(_db(settings)).latest(key)
     if plan is None or not plan.plan:
         raise HTTPException(409, "The card has no plan")
     card = await _load_card(settings, key)
@@ -705,11 +695,11 @@ async def start_test(
     """
     key = _valid_key(key)
     impl, review, plan, card, repo = await _test_context(settings, key)
-    store = tester.TestStore(settings.test_runs_dir)
+    store = _test_store(settings)
     previous = tester.recover_stale(store, store.latest(key))
     _check_test_free(key, repo, previous, stoppable=False)
 
-    configs = tester.ConfigStore(settings.test_configs_dir)
+    configs = tester.ConfigStore(_db(settings))
     use_ai = bool(body and body.use_ai)
     saved = None if use_ai else configs.load(tester.project_of(key))
     if not use_ai and saved is None:
@@ -751,7 +741,7 @@ async def report_test_problem(
     """Tell an AI what is not running right; it fixes the run settings and the apps restart."""
     key = _valid_key(key)
     impl, review, plan, card, repo = await _test_context(settings, key)
-    store = tester.TestStore(settings.test_runs_dir)
+    store = _test_store(settings)
     previous = tester.recover_stale(store, store.latest(key))
     if previous is None:
         raise HTTPException(409, "Start the test before reporting a problem")
@@ -759,7 +749,7 @@ async def report_test_problem(
     if key in tester.APPS:
         await tester.stop_app(store, key)
 
-    configs = tester.ConfigStore(settings.test_configs_dir)
+    configs = tester.ConfigStore(_db(settings))
     saved = configs.load(tester.project_of(key))
     run = store.create(key, impl, review.version, "feedback", body.message)
     tester.ACTIVE.add(key)
@@ -784,6 +774,12 @@ async def report_test_problem(
     return run
 
 
+@app.get("/api/test-configs")
+def list_test_configs(settings: SettingsDep) -> list[str]:
+    """Projects that have start settings, so the UI can enable the Test step."""
+    return tester.ConfigStore(_db(settings)).projects()
+
+
 def _project_repo(settings: Settings, project: str) -> str:
     if not tester.PROJECT_RE.match(project):
         raise HTTPException(404, "Unknown project")
@@ -796,7 +792,7 @@ def _project_repo(settings: Settings, project: str) -> str:
 @app.get("/api/test-configs/{project}")
 def get_project_test_config(project: str, settings: SettingsDep) -> tester.SavedConfig:
     _project_repo(settings, project)
-    config = tester.ConfigStore(settings.test_configs_dir).load(project)
+    config = tester.ConfigStore(_db(settings)).load(project)
     if config is None:
         raise HTTPException(404, "No saved test settings for this project")
     return config
@@ -813,21 +809,19 @@ def put_project_test_config(
             tester.resolve_workdir(repo, spec.workdir)
         except tester.TesterError as e:
             raise HTTPException(422, str(e)) from e
-    return tester.ConfigStore(settings.test_configs_dir).save(
-        project, body.apps, "settings"
-    )
+    return tester.ConfigStore(_db(settings)).save(project, body.apps, "settings")
 
 
 @app.delete("/api/test-configs/{project}", status_code=204)
 def delete_project_test_config(project: str, settings: SettingsDep) -> None:
     _project_repo(settings, project)
-    tester.ConfigStore(settings.test_configs_dir).delete(project)
+    tester.ConfigStore(_db(settings)).delete(project)
 
 
 @app.get("/api/cards/{key}/test/config")
 def get_test_config(key: str, settings: SettingsDep) -> tester.SavedConfig:
     key = _valid_key(key)
-    config = tester.ConfigStore(settings.test_configs_dir).load(tester.project_of(key))
+    config = tester.ConfigStore(_db(settings)).load(tester.project_of(key))
     if config is None:
         raise HTTPException(404, "No saved test settings for this project")
     return config
@@ -836,13 +830,13 @@ def get_test_config(key: str, settings: SettingsDep) -> tester.SavedConfig:
 @app.delete("/api/cards/{key}/test/config", status_code=204)
 def forget_test_config(key: str, settings: SettingsDep) -> None:
     key = _valid_key(key)
-    tester.ConfigStore(settings.test_configs_dir).delete(tester.project_of(key))
+    tester.ConfigStore(_db(settings)).delete(tester.project_of(key))
 
 
 @app.get("/api/cards/{key}/test")
 def get_test(key: str, settings: SettingsDep) -> tester.TestRun:
     key = _valid_key(key)
-    store = tester.TestStore(settings.test_runs_dir)
+    store = _test_store(settings)
     run = tester.recover_stale(store, store.latest(key))
     if run is None:
         raise HTTPException(404, "No test run exists for this card")
@@ -853,7 +847,7 @@ def get_test(key: str, settings: SettingsDep) -> tester.TestRun:
 async def stop_test(key: str, settings: SettingsDep) -> tester.TestRun:
     """Stop the running test app and free the repo."""
     key = _valid_key(key)
-    store = tester.TestStore(settings.test_runs_dir)
+    store = _test_store(settings)
     run = await tester.stop_app(store, key)
     if run is None:
         raise HTTPException(404, "No test run exists for this card")
@@ -866,7 +860,7 @@ async def get_changes(
 ) -> changes.Changes:
     """File-by-file diff of the card's branch, for manual review."""
     key = _valid_key(key)
-    impl = implementer.ImplementationStore(settings.implementations_dir).latest(key)
+    impl = implementer.ImplementationStore(_db(settings)).latest(key)
     if impl is None or not impl.branch or not impl.base_commit:
         raise HTTPException(404, "No implementation branch exists for this card")
     repo = _repo_for_key(settings, key)

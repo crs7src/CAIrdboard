@@ -335,10 +335,24 @@ test('clicking Test starts the manual test', async () => {
     '/api/implementations': { body: { 'AB-1': 'completed' } },
     '/api/reviews': { body: { 'AB-1': 'clean' } },
     '/api/ai-config': { body: withRepo },
+    '/api/test-configs': { body: ['AB'] },
     'POST /api/cards/AB-1/test': { status: 202, body: { state: 'preparing' } },
   })
   renderHome()
   await userEvent.click(await screen.findByRole('button', { name: 'Test' }))
   await vi.waitFor(() => expect(screen.getByText('Test: preparing')).toBeInTheDocument())
   expect(fetchMock).toHaveBeenCalledWith('/api/cards/AB-1/test', expect.objectContaining({ method: 'POST' }))
+})
+
+test('Test is disabled until the project has start settings', async () => {
+  mockApi({
+    '/api/cards': { body: [card('AB-1')] },
+    '/api/plans': { body: { 'AB-1': 'approved' } },
+    '/api/implementations': { body: { 'AB-1': 'completed' } },
+    '/api/reviews': { body: { 'AB-1': 'clean' } },
+    '/api/ai-config': { body: withRepo },
+    '/api/test-configs': { body: [] },
+  })
+  renderHome()
+  expect(await screen.findByRole('button', { name: 'Test' })).toBeDisabled()
 })
