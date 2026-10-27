@@ -306,6 +306,13 @@ export default function CardDetail() {
       {plan?.state === 'approved' && card.repo_configured && (
         <Implementation cardKey={key} onStateChange={setImplState} />
       )}
+      {plan?.state === 'approved' && card.repo_configured && implState && implState !== 'running' && (
+        <Box>
+          <Button component={RouterLink} to={`/cards/${key}/changes`}>
+            View changes
+          </Button>
+        </Box>
+      )}
       {plan?.state === 'approved' && card.repo_configured && implState === 'completed' && (
         <Review cardKey={key} />
       )}
