@@ -1,3 +1,4 @@
+import Brand from '../Brand'
 import SyncIcon from '@mui/icons-material/Sync'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
@@ -101,19 +102,22 @@ export default function Home() {
     sync()
   }, [sync])
 
-  // A card is in progress once it has a plan in any state.
+  // An ineligible status is always In Review/Done; otherwise a plan in any state means In Progress.
+  // If the config could not be loaded, every card is treated as eligible.
+  const inTodo = (c: JiraCard) => !config || isEligible(config, c.status)
   const sections = cards?.length
     ? [
-        { title: 'In Progress', items: cards.filter((c) => plans[c.key]) },
-        { title: 'To Do', items: cards.filter((c) => !plans[c.key]) },
-      ]
+        { title: 'In Progress', items: cards.filter((c) => plans[c.key] && inTodo(c)) },
+        { title: 'To Do', items: cards.filter((c) => !plans[c.key] && inTodo(c)) },
+        { title: 'In Review/Done', items: cards.filter((c) => !inTodo(c)) },
+      ].filter((s) => s.title !== 'In Review/Done' || s.items.length > 0)
     : []
 
   return (
     <Stack spacing={2}>
       <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center" }}>
         <Typography variant="h4" component="h1">
-          CAIrdboard
+          <Brand />
         </Typography>
         <Button variant="contained" startIcon={<SyncIcon />} onClick={sync} disabled={loading}>
           {loading ? 'Syncing...' : 'Sync'}

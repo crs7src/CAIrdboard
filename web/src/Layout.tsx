@@ -1,8 +1,9 @@
+import Brand from './Brand'
 import AppBar from '@mui/material/AppBar'
+import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Container from '@mui/material/Container'
 import Toolbar from '@mui/material/Toolbar'
-import Typography from '@mui/material/Typography'
 import { Link, Outlet, useLocation } from 'react-router-dom'
 
 const links = [
@@ -17,9 +18,11 @@ export default function Layout() {
     <>
       <AppBar position="static">
         <Toolbar>
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-            CAIrdboard
-          </Typography>
+          <Box sx={{ flexGrow: 1 }}>
+            <Button color="inherit" component={Link} to="/" sx={{ textTransform: 'none', fontSize: '1.25rem' }}>
+              <Brand />
+            </Button>
+          </Box>
           <nav>
             {links.map((l) => (
               <Button key={l.to} color="inherit" component={Link} to={l.to}>

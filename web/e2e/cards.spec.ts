@@ -5,7 +5,7 @@ const cards = [
   { key: 'AB-2', summary: 'Second card', status: 'In Progress', priority: null, url: 'https://x.atlassian.net/browse/AB-2', project: 'AB', description: '' },
 ]
 
-test('home page splits cards into In Progress and To Do and re-syncs', async ({ page }) => {
+test('home page splits cards into sections and re-syncs', async ({ page }) => {
   let calls = 0
   await page.route('**/api/plans', (route) => route.fulfill({ json: { 'AB-2': 'ready' } }))
   await page.route('**/api/reviews', (route) => route.fulfill({ json: {} }))
@@ -19,7 +19,7 @@ test('home page splits cards into In Progress and To Do and re-syncs', async ({ 
   })
   await page.goto('/')
   await expect(page.getByRole('region', { name: 'To Do' }).getByRole('link', { name: /AB-1/ })).toBeVisible()
-  await expect(page.getByRole('region', { name: 'In Progress' }).getByText('Second card')).toBeVisible()
+  await expect(page.getByRole('region', { name: 'In Review/Done' }).getByText('Second card')).toBeVisible()
   // Only the To Do card is eligible for a plan.
   await expect(page.getByText('Plan: available')).toHaveCount(1)
 

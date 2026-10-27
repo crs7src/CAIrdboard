@@ -275,3 +275,27 @@ test('an empty section says so', async () => {
   await screen.findByRole('link', { name: /AB-1/ })
   expect(within(screen.getByRole('region', { name: 'In Progress' })).getByText('No cards.')).toBeInTheDocument()
 })
+
+test('every ineligible card, planned or not, goes under In Review/Done', async () => {
+  mockApi({
+    '/api/cards': {
+      body: [card('AB-1'), card('AB-2', { status: 'Testing on Dev' }), card('AB-3', { status: 'Testing on Dev' })],
+    },
+    '/api/plans': { body: { 'AB-3': 'approved' } },
+    '/api/ai-config': { body: config },
+  })
+  renderHome()
+  await screen.findByRole('link', { name: /AB-1/ })
+  const hrefs = (name: string) =>
+    within(screen.getByRole('region', { name })).getAllByRole('link').map((l) => l.getAttribute('href'))
+  expect(hrefs('To Do')).toEqual(['/cards/AB-1'])
+  expect(hrefs('In Review/Done')).toEqual(['/cards/AB-2', '/cards/AB-3'])
+  expect(screen.getByRole('region', { name: 'In Progress' })).toHaveTextContent('No cards.')
+})
+
+test('the In Review/Done section is hidden when empty', async () => {
+  mockApi({ '/api/cards': { body: [card('AB-1')] }, '/api/plans': { body: {} }, '/api/ai-config': { body: config } })
+  renderHome()
+  await screen.findByRole('link', { name: /AB-1/ })
+  expect(screen.queryByRole('region', { name: 'In Review/Done' })).not.toBeInTheDocument()
+})

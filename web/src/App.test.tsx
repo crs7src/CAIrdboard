@@ -28,6 +28,12 @@ test('nav bar links to every page', () => {
   expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/settings')
 })
 
+test('the title in the header navigates home', async () => {
+  renderAt('/settings/jira')
+  await userEvent.click(screen.getByRole('link', { name: 'CAIrdboard' }))
+  expect(await screen.findByRole('heading', { level: 1, name: 'CAIrdboard' })).toBeInTheDocument()
+})
+
 test('clicking a nav link switches the page', async () => {
   renderAt('/')
   await userEvent.click(screen.getByRole('link', { name: 'Settings' }))
