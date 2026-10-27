@@ -2,9 +2,9 @@ import SyncIcon from '@mui/icons-material/Sync'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
+import CardActionArea from '@mui/material/CardActionArea'
 import CardContent from '@mui/material/CardContent'
 import Chip from '@mui/material/Chip'
-import Link from '@mui/material/Link'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { useCallback, useEffect, useState } from 'react'
@@ -79,22 +79,22 @@ export default function Cards() {
       {cards?.length === 0 && <Alert severity="info" role="note">No cards assigned to you.</Alert>}
       {cards?.map((card) => (
         <Card key={card.key} variant="outlined">
-          <CardContent>
+          <CardActionArea component={RouterLink} to={`/cards/${card.key}`}>
+            <CardContent>
             <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
-              <Link component={RouterLink} to={`/cards/${card.key}`} sx={{ fontWeight: 'bold' }}>
+              <Typography component="span" sx={{ fontWeight: 'bold' }}>
                 {card.key}
-              </Link>
+              </Typography>
               <Chip label={card.status} size="small" />
               {card.priority && <Chip label={card.priority} size="small" color="warning" />}
               {plans[card.key] && <Chip label={`Plan: ${plans[card.key]}`} size="small" variant="outlined" />}
               {!plans[card.key] && isEligible(config, card.status) && (
-                <Button size="small" component={RouterLink} to={`/cards/${card.key}`}>
-                  Plan
-                </Button>
+                <Chip label="Plan: available" size="small" color="primary" variant="outlined" />
               )}
             </Stack>
             <Typography sx={{ mt: 1 }}>{card.summary}</Typography>
-          </CardContent>
+            </CardContent>
+          </CardActionArea>
         </Card>
       ))}
     </Stack>

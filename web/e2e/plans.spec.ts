@@ -64,7 +64,9 @@ async function mockBackend(page: Page, cardOver = {}) {
 test('generate, review and approve a plan for a card', async ({ page }) => {
   await mockBackend(page)
   await page.goto('/cards')
-  await page.getByRole('link', { name: 'Plan', exact: true }).click()
+  await expect(page.getByText('Plan: available')).toBeVisible()
+  // Clicking the summary text (not a link) still opens the card.
+  await page.getByText('First card').click()
   await expect(page.getByRole('heading', { name: 'AB-1' })).toBeVisible()
   await expect(page.getByText('Do the first thing')).toBeVisible()
   await expect(page.getByText('Comments (1)')).toBeVisible()

@@ -17,10 +17,10 @@ test('cards page lists assigned Jira cards and re-syncs', async ({ page }) => {
   })
   await page.goto('/')
   await page.getByRole('link', { name: 'My Cards' }).click()
-  await expect(page.getByRole('link', { name: 'AB-1' })).toBeVisible()
+  await expect(page.getByRole('link', { name: /AB-1/ })).toBeVisible()
   await expect(page.getByText('Second card')).toBeVisible()
   // Only the To Do card is eligible for a plan.
-  await expect(page.getByRole('link', { name: 'Plan', exact: true })).toHaveCount(1)
+  await expect(page.getByText('Plan: available')).toHaveCount(1)
 
   const before = calls
   await page.getByRole('button', { name: 'Sync' }).click()

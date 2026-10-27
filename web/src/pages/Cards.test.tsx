@@ -27,12 +27,12 @@ test('lists cards with links to their detail page', async () => {
     '/api/ai-config': { body: config },
   })
   renderCards()
-  expect(await screen.findByRole('link', { name: 'AB-1' })).toHaveAttribute('href', '/cards/AB-1')
+  expect(await screen.findByRole('link', { name: /AB-1/ })).toHaveAttribute('href', '/cards/AB-1')
   expect(screen.getByText('Summary AB-2')).toBeInTheDocument()
   expect(screen.getAllByText('High')).toHaveLength(1)
 })
 
-test('eligible cards without a plan get a Plan button; others do not', async () => {
+test('eligible cards without a plan show a Plan: available chip; others do not', async () => {
   mockApi({
     '/api/cards': {
       body: [card('AB-1'), card('AB-2', { status: 'Testing' }), card('AB-3', { status: 'ready to play' })],
@@ -41,9 +41,18 @@ test('eligible cards without a plan get a Plan button; others do not', async () 
     '/api/ai-config': { body: { ...config, eligible_statuses: ['To Do', 'Ready to Play'] } },
   })
   renderCards()
-  await screen.findByRole('link', { name: 'AB-1' })
-  const buttons = screen.getAllByRole('link', { name: 'Plan' })
-  expect(buttons.map((b) => b.getAttribute('href'))).toEqual(['/cards/AB-1', '/cards/AB-3'])
+  await screen.findByRole('link', { name: /AB-1/ })
+  const available = screen.getAllByText('Plan: available')
+  expect(available.map((c) => c.closest('a')?.getAttribute('href'))).toEqual(['/cards/AB-1', '/cards/AB-3'])
+  expect(screen.queryByRole('button', { name: 'Plan' })).not.toBeInTheDocument()
+})
+
+test('the whole card is a single link to its detail page', async () => {
+  mockApi({ '/api/cards': { body: [card('AB-1')] }, '/api/plans': { body: {} }, '/api/ai-config': { body: config } })
+  renderCards()
+  const link = await screen.findByRole('link', { name: /AB-1/ })
+  expect(link).toHaveTextContent('Summary AB-1')
+  expect(screen.getAllByRole('link')).toHaveLength(1)
 })
 
 test('shows the plan state chip for cards that have a plan', async () => {
@@ -54,13 +63,13 @@ test('shows the plan state chip for cards that have a plan', async () => {
   })
   renderCards()
   expect(await screen.findByText('Plan: approved')).toBeInTheDocument()
-  expect(screen.queryByRole('link', { name: 'Plan' })).not.toBeInTheDocument()
+  expect(screen.queryByText('Plan: available')).not.toBeInTheDocument()
 })
 
 test('still lists cards if plan info fails to load', async () => {
   mockApi({ '/api/cards': { body: [card('AB-1')] } })
   renderCards()
-  expect(await screen.findByRole('link', { name: 'AB-1' })).toBeInTheDocument()
+  expect(await screen.findByRole('link', { name: /AB-1/ })).toBeInTheDocument()
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
 })
 
@@ -87,8 +96,8 @@ test('Sync button refetches cards', async () => {
     '/api/cards': [{ body: [card('AB-1')] }, { body: [card('AB-1'), card('AB-3')] }],
   })
   renderCards()
-  await screen.findByRole('link', { name: 'AB-1' })
+  await screen.findByRole('link', { name: /AB-1/ })
   await userEvent.click(screen.getByRole('button', { name: 'Sync' }))
-  expect(await screen.findByRole('link', { name: 'AB-3' })).toBeInTheDocument()
+  expect(await screen.findByRole('link', { name: /AB-3/ })).toBeInTheDocument()
   expect(fetchMock.mock.calls.filter(([u]) => u === '/api/cards')).toHaveLength(2)
 })
