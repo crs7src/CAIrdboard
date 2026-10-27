@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app import changes, feedback, implementer, jira, planner, reviewer, skills, tester
 from app.ai_config import AiConfig, load_ai_config, save_ai_config
@@ -623,7 +623,18 @@ def test_states(settings: SettingsDep) -> dict[str, str]:
 
 
 class StartTestBody(BaseModel):
-    replan: bool = False
+    use_ai: bool = False
+
+
+class TestConfigBody(BaseModel):
+    __test__ = False
+
+    apps: Annotated[list[tester.AppSpec], Field(min_length=1)]
+
+    @field_validator("apps")
+    @classmethod
+    def unique(cls, v: list[tester.AppSpec]) -> list[tester.AppSpec]:
+        return tester._unique_names(v)
 
 
 class TestProblemBody(BaseModel):
@@ -689,8 +700,8 @@ async def start_test(
 ) -> tester.TestRun:
     """Run the reviewed branch for manual testing.
 
-    Uses the project's saved settings when there are some (no AI involved), unless
-    `replan` is set; otherwise an AI works out how to run it.
+    Uses only the project's configured settings (no AI involved), unless `use_ai` is
+    set, in which case an AI works out how to run it (and its result is saved).
     """
     key = _valid_key(key)
     impl, review, plan, card, repo = await _test_context(settings, key)
@@ -699,7 +710,14 @@ async def start_test(
     _check_test_free(key, repo, previous, stoppable=False)
 
     configs = tester.ConfigStore(settings.test_configs_dir)
-    saved = None if body and body.replan else configs.load(tester.project_of(key))
+    use_ai = bool(body and body.use_ai)
+    saved = None if use_ai else configs.load(tester.project_of(key))
+    if not use_ai and saved is None:
+        raise HTTPException(
+            409,
+            "No start settings are configured for this project. Set them under "
+            "Settings > Test apps, or use AI start.",
+        )
     run = store.create(key, impl, review.version, "saved" if saved else "ai")
     tester.ACTIVE.add(key)
     implementer.ACTIVE_REPOS.add(repo)
@@ -764,6 +782,46 @@ async def report_test_problem(
         previous=previous,
     )
     return run
+
+
+def _project_repo(settings: Settings, project: str) -> str:
+    if not tester.PROJECT_RE.match(project):
+        raise HTTPException(404, "Unknown project")
+    repo = load_ai_config(settings.ai_config_file).repo_for(project)
+    if repo is None or not Path(repo).is_dir():
+        raise HTTPException(404, "No valid repo is configured for this project")
+    return repo
+
+
+@app.get("/api/test-configs/{project}")
+def get_project_test_config(project: str, settings: SettingsDep) -> tester.SavedConfig:
+    _project_repo(settings, project)
+    config = tester.ConfigStore(settings.test_configs_dir).load(project)
+    if config is None:
+        raise HTTPException(404, "No saved test settings for this project")
+    return config
+
+
+@app.put("/api/test-configs/{project}")
+def put_project_test_config(
+    project: str, body: TestConfigBody, settings: SettingsDep
+) -> tester.SavedConfig:
+    """Set how the project's apps are started for manual testing."""
+    repo = _project_repo(settings, project)
+    for spec in body.apps:
+        try:
+            tester.resolve_workdir(repo, spec.workdir)
+        except tester.TesterError as e:
+            raise HTTPException(422, str(e)) from e
+    return tester.ConfigStore(settings.test_configs_dir).save(
+        project, body.apps, "settings"
+    )
+
+
+@app.delete("/api/test-configs/{project}", status_code=204)
+def delete_project_test_config(project: str, settings: SettingsDep) -> None:
+    _project_repo(settings, project)
+    tester.ConfigStore(settings.test_configs_dir).delete(project)
 
 
 @app.get("/api/cards/{key}/test/config")

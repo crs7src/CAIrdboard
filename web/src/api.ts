@@ -300,11 +300,11 @@ export async function fetchTest(key: string): Promise<TestRun | null> {
   return response.json()
 }
 
-export async function startTest(key: string, replan = false): Promise<TestRun> {
+export async function startTest(key: string, useAi = false): Promise<TestRun> {
   const response = await fetch(
     `/api/cards/${key}/test`,
-    replan
-      ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ replan: true }) }
+    useAi
+      ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ use_ai: true }) }
       : { method: 'POST' },
   )
   if (!response.ok) throw await failure(response)
@@ -323,6 +323,30 @@ export async function fetchTestConfig(key: string): Promise<TestConfig | null> {
   if (response.status === 404) return null
   if (!response.ok) throw await failure(response)
   return response.json()
+}
+
+export type TestApp = TestRun['apps'][number]
+
+export async function fetchProjectTestConfig(project: string): Promise<TestConfig | null> {
+  const response = await fetch(`/api/test-configs/${project}`)
+  if (response.status === 404) return null
+  if (!response.ok) throw await failure(response)
+  return response.json()
+}
+
+export async function saveProjectTestConfig(project: string, apps: TestApp[]): Promise<TestConfig> {
+  const response = await fetch(`/api/test-configs/${project}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ apps }),
+  })
+  if (!response.ok) throw await failure(response)
+  return response.json()
+}
+
+export async function clearProjectTestConfig(project: string): Promise<void> {
+  const response = await fetch(`/api/test-configs/${project}`, { method: 'DELETE' })
+  if (!response.ok) throw await failure(response)
 }
 
 export async function forgetTestConfig(key: string): Promise<void> {

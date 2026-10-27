@@ -320,7 +320,7 @@ def test_start_get_list_and_stop(client, env, ai):
     impl = make_impl(tmp_path, work)
     make_review(tmp_path, impl)
     assert client.get("/api/cards/AB-1/test").status_code == 404
-    assert client.post("/api/cards/AB-1/test").status_code == 202
+    assert client.post("/api/cards/AB-1/test", json={"use_ai": True}).status_code == 202
     body = client.get("/api/cards/AB-1/test").json()
     assert body["state"] == "running", body["error"]
     assert client.get("/api/tests").json() == {"AB-1": "running"}
@@ -355,7 +355,9 @@ def test_server_shutdown_stops_running_apps(env, ai):
         impl = make_impl(tmp_path, work)
         make_review(tmp_path, impl)
         with TestClient(app) as c:
-            assert c.post("/api/cards/AB-1/test").status_code == 202
+            assert (
+                c.post("/api/cards/AB-1/test", json={"use_ai": True}).status_code == 202
+            )
             assert c.get("/api/cards/AB-1/test").json()["state"] == "running"
     assert not tester.APPS
     with socket.socket() as s:
@@ -549,7 +551,7 @@ def test_api_uses_saved_settings_then_replan_uses_the_ai(client, env, ai):
     assert client.delete("/api/cards/AB-1/test").status_code == 200
 
     assert (
-        client.post("/api/cards/AB-1/test", json={"replan": True}).json()["source"]
+        client.post("/api/cards/AB-1/test", json={"use_ai": True}).json()["source"]
         == "ai"
     )
     assert client.get("/api/cards/AB-1/test").json()["state"] == "running"
@@ -574,7 +576,7 @@ def test_api_problem_report_restarts_with_the_fixed_settings(client, env, ai):
     )
     port = free_port()
     ai.stdout = reply(port)
-    client.post("/api/cards/AB-1/test")
+    client.post("/api/cards/AB-1/test", json={"use_ai": True})
     assert client.get("/api/cards/AB-1/test").json()["state"] == "running"
 
     assert (
@@ -590,3 +592,58 @@ def test_api_problem_report_restarts_with_the_fixed_settings(client, env, ai):
     assert "login is blank" in prompt_of(ai)
     client.delete("/api/cards/AB-1/test")
     assert str(work) not in implementer.ACTIVE_REPOS
+
+
+@respx.mock
+def test_start_without_configured_settings_is_refused_and_never_uses_the_ai(
+    client, env, ai
+):
+    tmp_path, work = env
+    mock_jira()
+    approve_plan(tmp_path)
+    impl = make_impl(tmp_path, work)
+    make_review(tmp_path, impl)
+    r = client.post("/api/cards/AB-1/test")
+    assert r.status_code == 409 and "Test apps" in r.json()["detail"]
+    assert ai.ai_calls == [] and not tester.ACTIVE
+    assert client.get("/api/cards/AB-1/test").status_code == 404
+
+
+def test_project_settings_can_be_set_read_and_cleared(client, env):
+    _tmp_path, work = env
+    (work / "web").mkdir()
+    apps = [
+        app_spec(5, "api", start_command="run api"),
+        app_spec(6, "web", workdir="web", ready_timeout_seconds=120),
+    ]
+    assert client.get("/api/test-configs/AB").status_code == 404
+    r = client.put("/api/test-configs/AB", json={"apps": apps})
+    assert r.status_code == 200 and r.json()["saved_from"] == "settings"
+    body = client.get("/api/test-configs/AB").json()
+    assert [a["name"] for a in body["apps"]] == ["api", "web"]
+    assert body["apps"][1]["ready_timeout_seconds"] == 120
+    assert client.delete("/api/test-configs/AB").status_code == 204
+    assert client.get("/api/test-configs/AB").status_code == 404
+
+
+@pytest.mark.parametrize(
+    "apps",
+    [
+        [],
+        [app_spec(1, "a"), app_spec(2, "a")],
+        [app_spec(1, ready_url="http://example.com/")],
+        [app_spec(1, start_command=" ")],
+        [app_spec(1, workdir="../..")],
+        [app_spec(1, workdir="missing")],
+    ],
+)
+def test_invalid_project_settings_are_rejected(client, env, apps):
+    assert client.put("/api/test-configs/AB", json={"apps": apps}).status_code == 422
+    assert client.get("/api/test-configs/AB").status_code == 404
+
+
+def test_settings_need_a_project_with_a_repo(client):
+    assert client.get("/api/test-configs/ZZ").status_code == 404
+    r = client.put("/api/test-configs/ZZ", json={"apps": [app_spec(1)]})
+    assert r.status_code == 404
+    assert client.put("/api/test-configs/..%2Fx", json={"apps": []}).status_code == 404

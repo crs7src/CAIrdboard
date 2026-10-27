@@ -231,11 +231,6 @@ export default function Test({ cardKey }: { cardKey: string }) {
                 >
                   Send problem report
                 </Button>
-                {config && !active && (
-                  <Button disabled={busy} onClick={() => act(() => startTest(cardKey, true))}>
-                    Re-plan with AI
-                  </Button>
-                )}
                 {config && (
                   <Button color="inherit" disabled={busy} onClick={forget}>
                     Forget saved settings
@@ -243,6 +238,17 @@ export default function Test({ cardKey }: { cardKey: string }) {
                 )}
               </Stack>
             </Stack>
+          )}
+          {!active && !preparing && (
+            <Box>
+              <Button
+                variant="outlined"
+                disabled={busy}
+                onClick={() => act(() => startTest(cardKey, true))}
+              >
+                Start with AI
+              </Button>
+            </Box>
           )}
           {!run && !error && (
             <Typography color="text.secondary">Manual testing has not been started.</Typography>

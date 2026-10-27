@@ -77,7 +77,7 @@ test('a failure shows the error and can be retried', async () => {
   expect(screen.getByRole('button', { name: 'Test again' })).toBeEnabled()
 })
 
-test('shows saved settings, and Re-plan with AI asks for a fresh plan', async () => {
+test('shows saved settings, and Start with AI asks the AI', async () => {
   const fetchMock = mockApi({
     '/api/cards/AB-1/test': { body: testRun({ state: 'stopped' }) },
     '/api/cards/AB-1/test/config': { body: CONFIG },
@@ -86,9 +86,9 @@ test('shows saved settings, and Re-plan with AI asks for a fresh plan', async ()
   render(<Test cardKey="AB-1" />)
   expect(await screen.findByText('saved settings')).toBeInTheDocument()
   await open()
-  await userEvent.click(await screen.findByRole('button', { name: 'Re-plan with AI' }))
+  await userEvent.click(await screen.findByRole('button', { name: 'Start with AI' }))
   const post = fetchMock.mock.calls.find(([, i]) => i?.method === 'POST')!
-  expect(JSON.parse(String(post[1]?.body))).toEqual({ replan: true })
+  expect(JSON.parse(String(post[1]?.body))).toEqual({ use_ai: true })
 })
 
 test('Forget saved settings removes them', async () => {
