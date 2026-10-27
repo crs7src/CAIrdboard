@@ -13,6 +13,10 @@ afterEach(() => {
 const detail = (over = {}) => card('AB-1', { eligible: true, repo_configured: true, ...over })
 const NO_PLAN = { status: 404, body: { detail: 'No plan exists for this card' } }
 
+async function openPlan() {
+  await userEvent.click(await screen.findByRole('button', { name: /^Plan/ }))
+}
+
 function renderDetail() {
   render(
     <MemoryRouter initialEntries={['/cards/AB-1']}>
@@ -33,7 +37,38 @@ test('shows card details and a Generate button when there is no plan', async () 
     'href',
     'https://x.atlassian.net/browse/AB-1',
   )
+  expect(screen.getByRole('button', { name: 'Run plan' })).toBeInTheDocument()
+  expect(screen.getByText('not started')).toBeInTheDocument()
+  await openPlan()
   expect(screen.getByRole('button', { name: 'Generate plan' })).toBeInTheDocument()
+})
+
+test('plan accordion is collapsed by default', async () => {
+  mockApi({ '/api/cards/AB-1': { body: detail() }, '/api/cards/AB-1/plan': { body: plan() } })
+  renderDetail()
+  const header = await screen.findByRole('button', { name: /^Plan/ })
+  expect(header).toHaveAttribute('aria-expanded', 'false')
+  await userEvent.click(header)
+  expect(header).toHaveAttribute('aria-expanded', 'true')
+})
+
+test('play on a ready plan opens the accordion and focuses Approve', async () => {
+  mockApi({ '/api/cards/AB-1': { body: detail() }, '/api/cards/AB-1/plan': { body: plan() } })
+  renderDetail()
+  await userEvent.click(await screen.findByRole('button', { name: 'Review plan' }))
+  expect(screen.getByRole('button', { name: /^Plan/ })).toHaveAttribute('aria-expanded', 'true')
+  expect(await screen.findByRole('button', { name: 'Approve' })).toHaveFocus()
+})
+
+test('plan play button is hidden once the plan is approved', async () => {
+  mockApi({
+    '/api/cards/AB-1': { body: detail() },
+    '/api/cards/AB-1/plan': { body: plan({ state: 'approved' }) },
+    '/api/cards/AB-1/implementation': NO_PLAN,
+  })
+  renderDetail()
+  await screen.findByRole('button', { name: 'Start implementation' })
+  expect(screen.queryByRole('button', { name: /plan$/i })).not.toBeInTheDocument()
 })
 
 test('shows the card comments with authors', async () => {
@@ -91,7 +126,7 @@ test('ineligible card explains why and offers no Generate button', async () => {
   })
   renderDetail()
   expect(await screen.findByText(/not generated for cards in "Testing"/)).toBeInTheDocument()
-  expect(screen.queryByRole('button', { name: 'Generate plan' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /Generate plan|Run plan/ })).not.toBeInTheDocument()
 })
 
 test('missing repo mapping links to AI settings and hides Generate', async () => {
@@ -102,7 +137,7 @@ test('missing repo mapping links to AI settings and hides Generate', async () =>
   renderDetail()
   expect(await screen.findByText(/No repo is configured for project AB/)).toBeInTheDocument()
   expect(screen.getByRole('link', { name: 'AI Settings' })).toHaveAttribute('href', '/settings/ai')
-  expect(screen.queryByRole('button', { name: 'Generate plan' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /Generate plan|Run plan/ })).not.toBeInTheDocument()
 })
 
 test('Generate posts to the API and shows the running state', async () => {
@@ -112,7 +147,8 @@ test('Generate posts to the API and shows the running state', async () => {
     'POST /api/cards/AB-1/plan': { status: 202, body: plan({ state: 'running', plan: null }) },
   })
   renderDetail()
-  await userEvent.click(await screen.findByRole('button', { name: 'Generate plan' }))
+  await userEvent.click(await screen.findByRole('button', { name: 'Run plan' }))
+  await openPlan()
   expect(await screen.findByText('Generating plan...')).toBeInTheDocument()
   const post = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST')!
   expect(JSON.parse(post[1]!.body as string)).toEqual({ feedback: null })
@@ -128,6 +164,7 @@ test('polls while running and renders the markdown plan when ready', async () =>
     ],
   })
   renderDetail()
+  await openPlan()
   await screen.findByText('Generating plan...')
   await vi.advanceTimersByTimeAsync(POLL_MS + 100)
   expect(await screen.findByRole('heading', { name: 'Steps' })).toBeInTheDocument()
@@ -141,7 +178,7 @@ test('implementation section appears only once the plan is approved', async () =
     '/api/cards/AB-1/plan': { body: plan({ state: 'ready' }) },
   })
   renderDetail()
-  await screen.findByTestId('plan-body')
+  await screen.findByRole('button', { name: /^Plan/ })
   expect(screen.queryByRole('heading', { name: 'Implementation' })).not.toBeInTheDocument()
   vi.unstubAllGlobals()
 
@@ -161,6 +198,7 @@ test('Approve records the decision', async () => {
     'POST /api/cards/AB-1/plan/approve': { body: plan({ state: 'approved' }) },
   })
   renderDetail()
+  await openPlan()
   await userEvent.click(await screen.findByRole('button', { name: 'Approve' }))
   expect(await screen.findByText('approved')).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument()
@@ -173,6 +211,7 @@ test('Reject records the decision', async () => {
     'POST /api/cards/AB-1/plan/reject': { body: plan({ state: 'rejected' }) },
   })
   renderDetail()
+  await openPlan()
   await userEvent.click(await screen.findByRole('button', { name: 'Reject' }))
   expect(await screen.findByText('rejected')).toBeInTheDocument()
 })
@@ -187,6 +226,7 @@ test('Regenerate sends the typed feedback', async () => {
     },
   })
   renderDetail()
+  await openPlan()
   await userEvent.type(
     await screen.findByLabelText('What was wrong with this plan? (optional)'),
     'Too vague',
@@ -203,6 +243,7 @@ test('failed plan shows the error and can be retried', async () => {
     '/api/cards/AB-1/plan': { body: plan({ state: 'failed', plan: null, error: 'boom' }) },
   })
   renderDetail()
+  await openPlan()
   expect(await screen.findByRole('alert')).toHaveTextContent('boom')
   expect(screen.getByRole('button', { name: 'Regenerate plan' })).toBeInTheDocument()
 })
@@ -214,7 +255,7 @@ test('shows a server error when generating is refused', async () => {
     'POST /api/cards/AB-1/plan': { status: 409, body: { detail: 'Already generating' } },
   })
   renderDetail()
-  await userEvent.click(await screen.findByRole('button', { name: 'Generate plan' }))
+  await userEvent.click(await screen.findByRole('button', { name: 'Run plan' }))
   expect(await screen.findByRole('alert')).toHaveTextContent('Already generating')
 })
 

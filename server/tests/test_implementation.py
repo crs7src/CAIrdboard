@@ -454,3 +454,13 @@ def test_stale_running_implementation_is_marked_failed(client, env):
     store.create("AB-1", 1)
     body = client.get("/api/cards/AB-1/implementation").json()
     assert body["state"] == "failed" and "Interrupted" in body["error"]
+
+
+def test_implementations_listing(env, client):
+    tmp_path, _ = env
+    assert client.get("/api/implementations").json() == {}
+    store = implementer.ImplementationStore(tmp_path / "impls")
+    run = store.create("AB-1", 1)
+    run.state = "completed"
+    store.save(run)
+    assert client.get("/api/implementations").json() == {"AB-1": "completed"}

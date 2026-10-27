@@ -62,8 +62,31 @@ test('shows the plan state chip for cards that have a plan', async () => {
     '/api/ai-config': { body: config },
   })
   renderCards()
-  expect(await screen.findByText('Plan: approved')).toBeInTheDocument()
+  expect(await screen.findByText('Implementation: available')).toBeInTheDocument()
+  expect(screen.queryByText('Plan: approved')).not.toBeInTheDocument()
   expect(screen.queryByText('Plan: available')).not.toBeInTheDocument()
+})
+
+test('shows the implementation state once one exists', async () => {
+  mockApi({
+    '/api/cards': { body: [card('AB-1')] },
+    '/api/plans': { body: { 'AB-1': 'approved' } },
+    '/api/implementations': { body: { 'AB-1': 'running' } },
+    '/api/ai-config': { body: config },
+  })
+  renderCards()
+  expect(await screen.findByText('Implementation: running')).toBeInTheDocument()
+})
+
+test('shows the plan chip while the plan is not approved', async () => {
+  mockApi({
+    '/api/cards': { body: [card('AB-1')] },
+    '/api/plans': { body: { 'AB-1': 'ready' } },
+    '/api/implementations': { body: {} },
+    '/api/ai-config': { body: config },
+  })
+  renderCards()
+  expect(await screen.findByText('Plan: ready')).toBeInTheDocument()
 })
 
 test('still lists cards if plan info fails to load', async () => {

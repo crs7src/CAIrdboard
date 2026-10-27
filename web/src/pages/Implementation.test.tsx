@@ -9,6 +9,10 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+async function openImpl() {
+  await userEvent.click(await screen.findByRole('button', { name: /^Implementation/ }))
+}
+
 const NONE = { status: 404, body: { detail: 'No implementation exists for this card' } }
 
 test('offers to start when nothing has run yet, then shows progress', async () => {
@@ -21,6 +25,7 @@ test('offers to start when nothing has run yet, then shows progress', async () =
   })
   render(<Implementation cardKey="AB-1" />)
   await userEvent.click(await screen.findByRole('button', { name: 'Start implementation' }))
+  await openImpl()
   expect(await screen.findByText('Preparing branch...')).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: 'Start implementation' })).not.toBeInTheDocument()
   expect(fetchMock.mock.calls.some(([, i]) => i?.method === 'POST')).toBe(true)
@@ -49,6 +54,7 @@ test('polls while running and shows branch, live commits and the final report', 
     ],
   })
   render(<Implementation cardKey="AB-1" />)
+  await openImpl()
   expect(await screen.findByText('Implementing...')).toBeInTheDocument()
   expect(screen.getByText('AB-1_add_dark_mode')).toBeInTheDocument()
   expect(screen.getByText('AB-1: step 1 - add toggle')).toBeInTheDocument()
@@ -69,6 +75,7 @@ test('a failed run shows the error and can be retried', async () => {
     'POST /api/cards/AB-1/implementation': { status: 202, body: implementation({ state: 'running', stage: 'preparing' }) },
   })
   render(<Implementation cardKey="AB-1" />)
+  await openImpl()
   expect(await screen.findByText('The repo has uncommitted changes.')).toBeInTheDocument()
   expect(screen.getByText('Heads up')).toBeInTheDocument()
   await userEvent.click(screen.getByRole('button', { name: 'Retry implementation' }))
@@ -85,5 +92,14 @@ test('shows the server error when starting is refused', async () => {
   })
   render(<Implementation cardKey="AB-1" />)
   await userEvent.click(await screen.findByRole('button', { name: 'Start implementation' }))
+  await openImpl()
   expect(await screen.findByRole('alert')).toHaveTextContent('Another implementation is running')
+})
+
+test('is collapsed by default and shows the status in the header', async () => {
+  mockApi({ '/api/cards/AB-1/implementation': NONE })
+  render(<Implementation cardKey="AB-1" />)
+  const header = await screen.findByRole('button', { name: /^Implementation/ })
+  expect(header).toHaveAttribute('aria-expanded', 'false')
+  expect(screen.getByText('not started')).toBeInTheDocument()
 })

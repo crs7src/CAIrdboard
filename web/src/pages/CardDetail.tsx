@@ -6,13 +6,16 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
+import IconButton from '@mui/material/IconButton'
 import Link from '@mui/material/Link'
 import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
+import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
-import { useCallback, useEffect, useState } from 'react'
+import PlayArrowIcon from '@mui/icons-material/PlayArrow'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
 import { Link as RouterLink, useParams } from 'react-router-dom'
 import Implementation from './Implementation'
@@ -34,6 +37,9 @@ export default function CardDetail() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [feedback, setFeedback] = useState('')
+  const [planOpen, setPlanOpen] = useState(false)
+  const [focusApprove, setFocusApprove] = useState(false)
+  const approveRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     Promise.all([fetchCardDetail(key), fetchPlan(key)]).then(
@@ -53,6 +59,13 @@ export default function CardDetail() {
     }, POLL_MS)
     return () => clearInterval(id)
   }, [running, key])
+
+  useEffect(() => {
+    if (!focusApprove || !planOpen || !approveRef.current) return
+    approveRef.current.focus()
+    approveRef.current.scrollIntoView?.({ block: 'center' })
+    setFocusApprove(false)
+  }, [focusApprove, planOpen, plan])
 
   const act = useCallback(async (fn: () => Promise<Plan>) => {
     setBusy(true)
@@ -77,6 +90,19 @@ export default function CardDetail() {
 
   const canGenerate = card.eligible && card.repo_configured
   const hasPlanText = plan?.plan != null
+
+  let playLabel: string | null = null
+  let onPlay = () => {}
+  if (plan?.state === 'ready') {
+    playLabel = 'Review plan'
+    onPlay = () => {
+      setPlanOpen(true)
+      setFocusApprove(true)
+    }
+  } else if (canGenerate && !running && plan?.state !== 'approved') {
+    playLabel = !plan ? 'Run plan' : 'Retry plan'
+    onPlay = () => act(() => generatePlan(key, feedback))
+  }
 
   return (
     <Stack spacing={2}>
@@ -103,7 +129,7 @@ export default function CardDetail() {
         </Typography>
       )}
       <Accordion defaultExpanded disableGutters>
-        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+        <AccordionSummary component="div" expandIcon={<ExpandMoreIcon />}>
           <Typography>Comments ({card.comments.length})</Typography>
         </AccordionSummary>
         <AccordionDetails>
@@ -144,93 +170,126 @@ export default function CardDetail() {
         </Alert>
       )}
 
-      {plan && (
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-          <Typography variant="h5" component="h2">
-            Plan
-          </Typography>
-          <Chip label={`v${plan.version}`} size="small" />
-          <Chip
-            label={plan.state}
-            size="small"
-            color={
-              plan.state === 'approved'
-                ? 'success'
-                : plan.state === 'failed'
-                  ? 'error'
-                  : 'default'
-            }
-          />
-        </Stack>
-      )}
-      {running && (
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-          <CircularProgress size={20} aria-label="Generating plan" />
-          <Typography>Generating plan...</Typography>
-        </Stack>
-      )}
-      {plan?.state === 'failed' && <Alert severity="error">{plan.error}</Alert>}
-      {plan?.feedback && (
-        <Typography color="text.secondary">Feedback used: {plan.feedback}</Typography>
-      )}
-      {hasPlanText && (
-        <Paper variant="outlined" sx={{ p: 2 }}>
-          <Box data-testid="plan-body">
-            <Markdown>{plan.plan}</Markdown>
-          </Box>
-        </Paper>
-      )}
+      {(plan || canGenerate) && (
+        <Accordion expanded={planOpen} onChange={(_, v) => setPlanOpen(v)} disableGutters>
+          <AccordionSummary component="div" expandIcon={<ExpandMoreIcon />}>
+            <Stack
+              direction="row"
+              spacing={1}
+              sx={{ alignItems: 'center', flexGrow: 1, minWidth: 0 }}
+            >
+              <Typography variant="h6" component="h2">
+                Plan
+              </Typography>
+              {plan && <Chip label={`v${plan.version}`} size="small" />}
+              <Chip
+                label={plan ? plan.state : 'not started'}
+                size="small"
+                color={
+                  plan?.state === 'approved'
+                    ? 'success'
+                    : plan?.state === 'failed'
+                      ? 'error'
+                      : 'default'
+                }
+              />
+              {running && <CircularProgress size={18} aria-label="Generating plan" />}
+              <Box sx={{ flexGrow: 1 }} />
+              {playLabel && (
+                <Tooltip title={playLabel}>
+                  <span>
+                    <IconButton
+                      size="small"
+                      color="primary"
+                      aria-label={playLabel}
+                      disabled={busy}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onPlay()
+                      }}
+                      onFocus={(e) => e.stopPropagation()}
+                    >
+                      <PlayArrowIcon />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              )}
+            </Stack>
+          </AccordionSummary>
+          <AccordionDetails>
+            <Stack spacing={2}>
+              {running && <Typography>Generating plan...</Typography>}
+              {plan?.state === 'failed' && <Alert severity="error">{plan.error}</Alert>}
+              {plan?.feedback && (
+                <Typography color="text.secondary">Feedback used: {plan.feedback}</Typography>
+              )}
+              {hasPlanText && (
+                <Paper variant="outlined" sx={{ p: 2 }}>
+                  <Box data-testid="plan-body">
+                    <Markdown>{plan.plan}</Markdown>
+                  </Box>
+                </Paper>
+              )}
 
-      {plan?.state === 'ready' && (
-        <Stack direction="row" spacing={1}>
-          <Button
-            variant="contained"
-            color="success"
-            disabled={busy}
-            onClick={() => act(() => decidePlan(key, 'approve'))}
-          >
-            Approve
-          </Button>
-          <Button
-            variant="outlined"
-            color="error"
-            disabled={busy}
-            onClick={() => act(() => decidePlan(key, 'reject'))}
-          >
-            Reject
-          </Button>
-        </Stack>
+              {plan?.state === 'ready' && (
+                <Stack direction="row" spacing={1}>
+                  <Button
+                    ref={approveRef}
+                    variant="contained"
+                    color="success"
+                    disabled={busy}
+                    onClick={() => act(() => decidePlan(key, 'approve'))}
+                  >
+                    Approve
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    color="error"
+                    disabled={busy}
+                    onClick={() => act(() => decidePlan(key, 'reject'))}
+                  >
+                    Reject
+                  </Button>
+                </Stack>
+              )}
+
+              {canGenerate && !running && !plan && (
+                <Box>
+                  <Button
+                    variant="contained"
+                    disabled={busy}
+                    onClick={() => act(() => generatePlan(key))}
+                  >
+                    Generate plan
+                  </Button>
+                </Box>
+              )}
+              {canGenerate && !running && plan && (
+                <Stack spacing={1}>
+                  <TextField
+                    label="What was wrong with this plan? (optional)"
+                    multiline
+                    minRows={2}
+                    value={feedback}
+                    onChange={(e) => setFeedback(e.target.value)}
+                  />
+                  <Box>
+                    <Button
+                      variant="outlined"
+                      disabled={busy}
+                      onClick={() => act(() => generatePlan(key, feedback))}
+                    >
+                      Regenerate plan
+                    </Button>
+                  </Box>
+                </Stack>
+              )}
+            </Stack>
+          </AccordionDetails>
+        </Accordion>
       )}
 
       {plan?.state === 'approved' && card.repo_configured && <Implementation cardKey={key} />}
-
-      {canGenerate && !running && !plan && (
-        <Box>
-          <Button variant="contained" disabled={busy} onClick={() => act(() => generatePlan(key))}>
-            Generate plan
-          </Button>
-        </Box>
-      )}
-      {canGenerate && !running && plan && (
-        <Stack spacing={1}>
-          <TextField
-            label="What was wrong with this plan? (optional)"
-            multiline
-            minRows={2}
-            value={feedback}
-            onChange={(e) => setFeedback(e.target.value)}
-          />
-          <Box>
-            <Button
-              variant="outlined"
-              disabled={busy}
-              onClick={() => act(() => generatePlan(key, feedback))}
-            >
-              Regenerate plan
-            </Button>
-          </Box>
-        </Stack>
-      )}
     </Stack>
   )
 }

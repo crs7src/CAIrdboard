@@ -192,6 +192,20 @@ def plan_states(settings: SettingsDep) -> dict[str, str]:
     return states
 
 
+@app.get("/api/implementations")
+def implementation_states(settings: SettingsDep) -> dict[str, str]:
+    """Latest implementation state for every card that has one."""
+    store = implementer.ImplementationStore(settings.implementations_dir)
+    states: dict[str, str] = {}
+    if settings.implementations_dir.exists():
+        for d in sorted(settings.implementations_dir.iterdir()):
+            if d.is_dir() and planner.CARD_KEY_RE.match(d.name):
+                latest = implementer.recover_stale(store, store.latest(d.name))
+                if latest:
+                    states[d.name] = latest.state
+    return states
+
+
 class PlanRequest(BaseModel):
     feedback: str | None = None
 

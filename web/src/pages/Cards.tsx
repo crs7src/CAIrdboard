@@ -12,9 +12,11 @@ import { Link as RouterLink } from 'react-router-dom'
 import {
   fetchAiConfig,
   fetchCards,
+  fetchImplementationStates,
   fetchPlanStates,
   type AiConfig,
   type Card as JiraCard,
+  type ImplState,
   type PlanState,
 } from '../api'
 
@@ -28,6 +30,7 @@ export default function Cards() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [plans, setPlans] = useState<Record<string, PlanState>>({})
+  const [impls, setImpls] = useState<Record<string, ImplState>>({})
   const [config, setConfig] = useState<AiConfig | null>(null)
 
   const sync = useCallback(async () => {
@@ -36,11 +39,13 @@ export default function Cards() {
     try {
       setCards(await fetchCards())
       // Plan info only decorates the list, so failures here are not fatal.
-      const [p, cfg] = await Promise.all([
+      const [p, im, cfg] = await Promise.all([
         fetchPlanStates().catch(() => ({})),
+        fetchImplementationStates().catch(() => ({})),
         fetchAiConfig().catch(() => null),
       ])
       setPlans(p)
+      setImpls(im)
       setConfig(cfg)
     } catch (e) {
       setError((e as Error).message)
@@ -87,7 +92,18 @@ export default function Cards() {
               </Typography>
               <Chip label={card.status} size="small" />
               {card.priority && <Chip label={card.priority} size="small" color="warning" />}
-              {plans[card.key] && <Chip label={`Plan: ${plans[card.key]}`} size="small" variant="outlined" />}
+              {plans[card.key] === 'approved' ? (
+                <Chip
+                  label={`Implementation: ${impls[card.key] ?? 'available'}`}
+                  size="small"
+                  color={impls[card.key] ? undefined : 'primary'}
+                  variant="outlined"
+                />
+              ) : (
+                plans[card.key] && (
+                  <Chip label={`Plan: ${plans[card.key]}`} size="small" variant="outlined" />
+                )
+              )}
               {!plans[card.key] && isEligible(config, card.status) && (
                 <Chip label="Plan: available" size="small" color="primary" variant="outlined" />
               )}

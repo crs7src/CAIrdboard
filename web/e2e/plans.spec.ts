@@ -34,9 +34,14 @@ const plan = (over = {}) => ({
 async function mockBackend(page: Page, cardOver = {}) {
   let current: ReturnType<typeof plan> | null = null
   const posts: unknown[] = []
+  let impl: Record<string, unknown> | null = null
+  let implPolls = 0
   await page.route('**/api/cards', (route) => route.fulfill({ json: [card(cardOver)] }))
   await page.route('**/api/plans', (route) =>
     route.fulfill({ json: current ? { 'AB-1': current.state } : {} }),
+  )
+  await page.route('**/api/implementations', (route) =>
+    route.fulfill({ json: impl ? { 'AB-1': impl.state } : {} }),
   )
   await page.route('**/api/ai-config', (route) =>
     route.fulfill({ json: { eligible_statuses: ['DEV In Progress'], project_repos: { AB: '/r' } } }),
@@ -59,8 +64,6 @@ async function mockBackend(page: Page, cardOver = {}) {
     })
   }
 
-  let impl: Record<string, unknown> | null = null
-  let implPolls = 0
   const implementation = (over = {}) => ({
     card_key: 'AB-1',
     version: 1,
@@ -105,24 +108,37 @@ test('generate, review and approve a plan for a card', async ({ page }) => {
   await expect(page.getByText('Comments (1)')).toBeVisible()
   await expect(page.getByText('Fix the button color')).toBeVisible()
 
-  await page.getByRole('button', { name: 'Generate plan' }).click()
-  await expect(page.getByRole('heading', { name: 'Steps' })).toBeVisible({ timeout: 10_000 })
-  await expect(page.getByText('Do the thing')).toBeVisible()
+  // Plan accordion starts collapsed with a play button for the next step.
+  const planHeader = page.getByRole('button', { name: /^Plan/ })
+  await expect(planHeader).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByText('not started')).toBeVisible()
+  await page.getByRole('button', { name: 'Run plan', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Review plan', exact: true })).toBeVisible({ timeout: 10_000 })
 
-  await page.getByRole('button', { name: 'Approve' }).click()
+  // Play on a ready plan opens the accordion and focuses Approve.
+  await page.getByRole('button', { name: 'Review plan', exact: true }).click()
+  await expect(planHeader).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.getByRole('heading', { name: 'Steps' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeFocused()
+
+  await page.getByRole('button', { name: 'Approve', exact: true }).click()
   await expect(page.getByText('approved', { exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Approve' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0)
+
+  await page.goto('/cards')
+  await expect(page.getByText('Implementation: available')).toBeVisible()
 })
 
 test('approved plan can be implemented on a new branch with a review report', async ({ page }) => {
   await mockBackend(page)
   await page.goto('/cards/AB-1')
-  await expect(page.getByRole('button', { name: 'Start implementation' })).toHaveCount(0)
-  await page.getByRole('button', { name: 'Generate plan' }).click()
-  await expect(page.getByRole('heading', { name: 'Steps' })).toBeVisible({ timeout: 10_000 })
-  await page.getByRole('button', { name: 'Approve' }).click()
+  await expect(page.getByRole('button', { name: 'Start implementation', exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Run plan', exact: true }).click()
+  await page.getByRole('button', { name: 'Review plan', exact: true }).click()
+  await page.getByRole('button', { name: 'Approve', exact: true }).click()
 
-  await page.getByRole('button', { name: 'Start implementation' }).click()
+  await page.getByRole('button', { name: 'Start implementation', exact: true }).click()
+  await page.getByRole('button', { name: /^Implementation/ }).click()
   await expect(page.getByText('Implementing...')).toBeVisible()
   await expect(page.getByText('AB-1: step 2 - add tests')).toBeVisible({ timeout: 15_000 })
   await expect(page.getByText('AB-1_add_dark_mode')).toBeVisible()
@@ -133,8 +149,8 @@ test('approved plan can be implemented on a new branch with a review report', as
 test('reject a plan and regenerate it with feedback', async ({ page }) => {
   const { posts } = await mockBackend(page)
   await page.goto('/cards/AB-1')
-  await page.getByRole('button', { name: 'Generate plan' }).click()
-  await expect(page.getByRole('heading', { name: 'Steps' })).toBeVisible({ timeout: 10_000 })
+  await page.getByRole('button', { name: 'Run plan', exact: true }).click()
+  await page.getByRole('button', { name: 'Review plan', exact: true }).click()
   await page.getByRole('button', { name: 'Reject' }).click()
   await expect(page.getByText('rejected', { exact: true })).toBeVisible()
 
@@ -159,5 +175,5 @@ test('cards in testing status cannot get a plan', async ({ page }) => {
   await mockBackend(page, { status: 'Testing', eligible: false })
   await page.goto('/cards/AB-1')
   await expect(page.getByText(/not generated for cards in "Testing"/)).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Generate plan' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /Generate plan|Run plan/ })).toHaveCount(0)
 })

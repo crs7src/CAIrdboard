@@ -140,6 +140,12 @@ export interface Plan {
   updated_at: string
 }
 
+export async function fetchImplementationStates(): Promise<Record<string, ImplState>> {
+  const response = await fetch('/api/implementations')
+  if (!response.ok) throw await failure(response)
+  return response.json()
+}
+
 export async function fetchPlanStates(): Promise<Record<string, PlanState>> {
   const response = await fetch('/api/plans')
   if (!response.ok) throw await failure(response)

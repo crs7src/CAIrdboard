@@ -1,14 +1,20 @@
+import Accordion from '@mui/material/Accordion'
+import AccordionDetails from '@mui/material/AccordionDetails'
+import AccordionSummary from '@mui/material/AccordionSummary'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
+import IconButton from '@mui/material/IconButton'
 import List from '@mui/material/List'
 import ListItem from '@mui/material/ListItem'
 import ListItemText from '@mui/material/ListItemText'
 import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
+import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import { useEffect, useState } from 'react'
 import Markdown from 'react-markdown'
 import { fetchImplementation, startImplementation, type Implementation as Impl } from '../api'
@@ -59,62 +65,81 @@ export default function Implementation({ cardKey }: { cardKey: string }) {
 
   if (!loaded) return null
 
+  const canStart = !running && (!impl || impl.state === 'failed')
+  const startLabel = impl ? 'Retry implementation' : 'Start implementation'
+
   return (
-    <Stack spacing={2} component="section" aria-label="Implementation">
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-        <Typography variant="h5" component="h2">
-          Implementation
-        </Typography>
-        {impl && (
+    <Accordion disableGutters aria-label="Implementation">
+      <AccordionSummary component="div" expandIcon={<ExpandMoreIcon />}>
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexGrow: 1, minWidth: 0 }}>
+          <Typography variant="h6" component="h2">
+            Implementation
+          </Typography>
           <Chip
-            label={impl.state}
+            label={impl ? impl.state : 'not started'}
             size="small"
-            color={impl.state === 'completed' ? 'success' : impl.state === 'failed' ? 'error' : 'default'}
+            color={
+              impl?.state === 'completed' ? 'success' : impl?.state === 'failed' ? 'error' : 'default'
+            }
           />
-        )}
-        {impl?.branch && <Chip label={impl.branch} size="small" variant="outlined" />}
-      </Stack>
-
-      {running && (
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-          <CircularProgress size={20} aria-label="Implementing" />
-          <Typography>{STAGE_LABEL[impl.stage]}</Typography>
+          {impl?.branch && <Chip label={impl.branch} size="small" variant="outlined" />}
+          {running && <CircularProgress size={18} aria-label="Implementing" />}
+          <Box sx={{ flexGrow: 1 }} />
+          {canStart && (
+            <Tooltip title={startLabel}>
+              <span>
+                <IconButton
+                  size="small"
+                  color="primary"
+                  aria-label={startLabel}
+                  disabled={busy}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    start()
+                  }}
+                  onFocus={(e) => e.stopPropagation()}
+                >
+                  <PlayArrowIcon />
+                </IconButton>
+              </span>
+            </Tooltip>
+          )}
         </Stack>
-      )}
-      {impl?.notes.map((n) => (
-        <Alert key={n} severity="info" role="note">
-          {n}
-        </Alert>
-      ))}
-      {impl?.state === 'failed' && <Alert severity="error">{impl.error}</Alert>}
-      {error && <Alert severity="error">{error}</Alert>}
+      </AccordionSummary>
+      <AccordionDetails>
+        <Stack spacing={2}>
+          {running && impl && <Typography>{STAGE_LABEL[impl.stage]}</Typography>}
+          {impl?.notes.map((n) => (
+            <Alert key={n} severity="info" role="note">
+              {n}
+            </Alert>
+          ))}
+          {impl?.state === 'failed' && <Alert severity="error">{impl.error}</Alert>}
+          {error && <Alert severity="error">{error}</Alert>}
 
-      {impl && impl.commits.length > 0 && (
-        <Paper variant="outlined">
-          <List dense aria-label="Commits">
-            {impl.commits.map((c) => (
-              <ListItem key={c.sha}>
-                <ListItemText primary={c.subject} secondary={c.sha} />
-              </ListItem>
-            ))}
-          </List>
-        </Paper>
-      )}
-      {impl?.report && (
-        <Paper variant="outlined" sx={{ p: 2 }}>
-          <Box data-testid="implementation-report">
-            <Markdown>{impl.report}</Markdown>
-          </Box>
-        </Paper>
-      )}
-
-      {!running && (!impl || impl.state === 'failed') && (
-        <Box>
-          <Button variant="contained" disabled={busy} onClick={start}>
-            {impl ? 'Retry implementation' : 'Start implementation'}
-          </Button>
-        </Box>
-      )}
-    </Stack>
+          {impl && impl.commits.length > 0 && (
+            <Paper variant="outlined">
+              <List dense aria-label="Commits">
+                {impl.commits.map((c) => (
+                  <ListItem key={c.sha}>
+                    <ListItemText primary={c.subject} secondary={c.sha} />
+                  </ListItem>
+                ))}
+              </List>
+            </Paper>
+          )}
+          {impl?.report && (
+            <Paper variant="outlined" sx={{ p: 2 }}>
+              <Box data-testid="implementation-report">
+                <Markdown>{impl.report}</Markdown>
+              </Box>
+            </Paper>
+          )}
+          {!impl && !error && (
+            <Typography color="text.secondary">Implementation has not been started.</Typography>
+          )}
+        </Stack>
+      </AccordionDetails>
+    </Accordion>
   )
 }
