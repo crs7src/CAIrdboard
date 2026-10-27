@@ -315,3 +315,9 @@ test('has a back link to My Cards, even when the card fails to load', async () =
   renderDetail()
   expect(await screen.findAllByRole('link', { name: 'Back to My Cards' })).toHaveLength(2)
 })
+
+test('comments are collapsed by default', async () => {
+  mockApi({ '/api/cards/AB-1': { body: detail() }, '/api/cards/AB-1/plan': NO_PLAN })
+  renderDetail()
+  expect(await screen.findByRole('button', { name: /^Comments/ })).toHaveAttribute('aria-expanded', 'false')
+})

@@ -137,6 +137,8 @@ test('generate, review and approve a plan for a card', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'AB-1' })).toBeVisible()
   await expect(page.getByText('Do the first thing')).toBeVisible()
   await expect(page.getByText('Comments (1)')).toBeVisible()
+  await expect(page.getByText('Fix the button color')).toBeHidden()
+  await page.getByText('Comments (1)').click()
   await expect(page.getByText('Fix the button color')).toBeVisible()
 
   // Plan accordion starts collapsed with a play button for the next step.
