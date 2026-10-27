@@ -76,3 +76,20 @@ export const implementation = (over: Record<string, unknown> = {}) => ({
   updated_at: 't',
   ...over,
 })
+
+export const review = (over: Record<string, unknown> = {}) => ({
+  card_key: 'AB-1',
+  version: 1,
+  implementation_version: 1,
+  state: 'clean',
+  branch: 'AB-1_add_dark_mode',
+  base_commit: 'abc',
+  head_before: 'def',
+  fix_commits: [],
+  notes: [],
+  report: null,
+  error: null,
+  created_at: 't',
+  updated_at: 't',
+  ...over,
+})

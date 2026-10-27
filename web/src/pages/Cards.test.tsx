@@ -159,16 +159,48 @@ test('a completed plan shows a green check and unlocks implement', async () => {
   expect(enabled('Implement')).toBeEnabled()
 })
 
-test('a completed implementation shows a check; review stays disabled', async () => {
+test('a completed implementation shows a check and unlocks review', async () => {
   mockApi({
     '/api/cards': { body: [card('AB-1')] },
     '/api/plans': { body: { 'AB-1': 'approved' } },
     '/api/implementations': { body: { 'AB-1': 'completed' } },
+    '/api/reviews': { body: {} },
     '/api/ai-config': { body: withRepo },
   })
   renderCards()
   expect(await screen.findByRole('img', { name: 'Implement' })).toBeInTheDocument()
-  expect(enabled('Review')).toBeDisabled()
+  expect(enabled('Review')).toBeEnabled()
+  expect(screen.getByText('Review: available')).toBeInTheDocument()
+})
+
+test('a clean review shows a check; a review with fixes can be run again', async () => {
+  mockApi({
+    '/api/cards': { body: [card('AB-1'), card('AB-2')] },
+    '/api/plans': { body: { 'AB-1': 'approved', 'AB-2': 'approved' } },
+    '/api/implementations': { body: { 'AB-1': 'completed', 'AB-2': 'completed' } },
+    '/api/reviews': { body: { 'AB-1': 'clean', 'AB-2': 'fixed' } },
+    '/api/ai-config': { body: withRepo },
+  })
+  renderCards()
+  expect(await screen.findByText('Review: clean')).toBeInTheDocument()
+  expect(screen.getByText('Review: fixed')).toBeInTheDocument()
+  expect(screen.getAllByRole('img', { name: 'Review' })).toHaveLength(1)
+  expect(screen.getAllByRole('button', { name: 'Review' })).toHaveLength(1)
+})
+
+test('clicking Review starts the review', async () => {
+  const fetchMock = mockApi({
+    '/api/cards': { body: [card('AB-1')] },
+    '/api/plans': { body: { 'AB-1': 'approved' } },
+    '/api/implementations': { body: { 'AB-1': 'completed' } },
+    '/api/reviews': { body: {} },
+    '/api/ai-config': { body: withRepo },
+    'POST /api/cards/AB-1/review': { status: 202, body: { state: 'running' } },
+  })
+  renderCards()
+  await userEvent.click(await screen.findByRole('button', { name: 'Review' }))
+  await vi.waitFor(() => expect(screen.getByText('Review: running')).toBeInTheDocument())
+  expect(fetchMock.mock.calls.some(([, i]) => i?.method === 'POST')).toBe(true)
 })
 
 test('clicking Plan starts the plan without opening the card', async () => {

@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from pydantic import BaseModel, field_validator
 
-from app import implementer, jira, planner
+from app import implementer, jira, planner, reviewer
 from app.ai_config import AiConfig, load_ai_config, save_ai_config
 from app.config import Settings, get_settings, save_credentials
 
@@ -362,4 +362,78 @@ async def get_implementation(
             )
         except implementer.ImplementationError, HTTPException:
             pass
+    return run
+
+
+@app.get("/api/reviews")
+def review_states(settings: SettingsDep) -> dict[str, str]:
+    """Latest review state for every card that has one."""
+    store = reviewer.ReviewStore(settings.reviews_dir)
+    states: dict[str, str] = {}
+    if settings.reviews_dir.exists():
+        for d in sorted(settings.reviews_dir.iterdir()):
+            if d.is_dir() and planner.CARD_KEY_RE.match(d.name):
+                latest = reviewer.recover_stale(store, store.latest(d.name))
+                if latest:
+                    states[d.name] = latest.state
+    return states
+
+
+@app.post("/api/cards/{key}/review", status_code=202)
+async def start_review(
+    key: str,
+    settings: SettingsDep,
+    runner: RunnerDep,
+    background: BackgroundTasks,
+) -> reviewer.Review:
+    """Review the completed implementation in a fresh AI session; it may commit fixes."""
+    key = _valid_key(key)
+    impl_store = implementer.ImplementationStore(settings.implementations_dir)
+    impl = impl_store.latest(key)
+    if impl is None or impl.state != "completed" or not impl.branch:
+        raise HTTPException(409, "Only a completed implementation can be reviewed")
+    plan = planner.PlanStore(settings.plans_dir).latest(key)
+    if plan is None or not plan.plan:
+        raise HTTPException(409, "The card has no plan to review against")
+    card = await _load_card(settings, key)
+    repo = _repo_for_key(settings, key)
+
+    store = reviewer.ReviewStore(settings.reviews_dir)
+    previous = reviewer.recover_stale(store, store.latest(key))
+    if (
+        key in reviewer.ACTIVE
+        or key in implementer.ACTIVE
+        or (previous and previous.state == "running")
+    ):
+        raise HTTPException(409, "This card is already being worked on")
+    if repo in implementer.ACTIVE_REPOS:
+        raise HTTPException(
+            409, "Another run is in progress in this repo. Wait for it to finish."
+        )
+
+    run = store.create(key, impl)
+    reviewer.ACTIVE.add(key)
+    implementer.ACTIVE_REPOS.add(repo)
+    background.add_task(
+        reviewer.run_review,
+        store,
+        run,
+        impl,
+        card,
+        plan.plan,
+        repo,
+        settings.copilot_command,
+        settings.review_timeout_seconds,
+        runner,
+    )
+    return run
+
+
+@app.get("/api/cards/{key}/review")
+async def get_review(key: str, settings: SettingsDep) -> reviewer.Review:
+    key = _valid_key(key)
+    store = reviewer.ReviewStore(settings.reviews_dir)
+    run = reviewer.recover_stale(store, store.latest(key))
+    if run is None:
+        raise HTTPException(404, "No review exists for this card")
     return run

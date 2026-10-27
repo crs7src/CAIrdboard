@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     plan_timeout_seconds: float = 900
     implementations_dir: Path = Path("data/implementations")
     implement_timeout_seconds: float = 3600
+    reviews_dir: Path = Path("data/reviews")
+    review_timeout_seconds: float = 1800
 
     @property
     def jira_configured(self) -> bool:

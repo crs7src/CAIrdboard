@@ -23,7 +23,12 @@ export const IMPL_POLL_MS = 3000
 
 const STAGE_LABEL = { preparing: 'Preparing branch...', implementing: 'Implementing...', done: '' }
 
-export default function Implementation({ cardKey }: { cardKey: string }) {
+interface Props {
+  cardKey: string
+  onStateChange?: (state: Impl['state'] | null) => void
+}
+
+export default function Implementation({ cardKey, onStateChange }: Props) {
   const [impl, setImpl] = useState<Impl | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -41,6 +46,11 @@ export default function Implementation({ cardKey }: { cardKey: string }) {
       },
     )
   }, [cardKey])
+
+  const state = impl?.state ?? null
+  useEffect(() => {
+    if (loaded) onStateChange?.(state)
+  }, [loaded, state, onStateChange])
 
   const running = impl?.state === 'running'
   useEffect(() => {

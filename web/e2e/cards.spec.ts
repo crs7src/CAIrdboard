@@ -8,6 +8,7 @@ const cards = [
 test('cards page lists assigned Jira cards and re-syncs', async ({ page }) => {
   let calls = 0
   await page.route('**/api/plans', (route) => route.fulfill({ json: {} }))
+  await page.route('**/api/reviews', (route) => route.fulfill({ json: {} }))
   await page.route('**/api/implementations', (route) => route.fulfill({ json: {} }))
   await page.route('**/api/ai-config', (route) =>
     route.fulfill({ json: { eligible_statuses: ['To Do'], project_repos: {} } }),

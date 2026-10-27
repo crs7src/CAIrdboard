@@ -16,12 +16,15 @@ import {
   fetchCards,
   fetchImplementationStates,
   fetchPlanStates,
+  fetchReviewStates,
   generatePlan,
+  startReview,
   startImplementation,
   type AiConfig,
   type Card as JiraCard,
   type ImplState,
   type PlanState,
+  type ReviewState,
 } from '../api'
 
 function isEligible(config: AiConfig | null, status: string) {
@@ -36,6 +39,12 @@ function planStep(plan: PlanState | undefined, eligible: boolean): StepStatus {
   return eligible ? 'next' : 'blocked'
 }
 
+function reviewStep(impl: ImplState | undefined, review: ReviewState | undefined): StepStatus {
+  if (review === 'clean') return 'done'
+  if (review === 'running') return 'running'
+  return impl === 'completed' ? 'next' : 'blocked'
+}
+
 function implementStep(plan: PlanState | undefined, impl: ImplState | undefined, canRun: boolean): StepStatus {
   if (impl === 'completed') return 'done'
   if (impl === 'running') return 'running'
@@ -47,6 +56,7 @@ export default function Cards() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [plans, setPlans] = useState<Record<string, PlanState>>({})
+  const [reviews, setReviews] = useState<Record<string, ReviewState>>({})
   const [impls, setImpls] = useState<Record<string, ImplState>>({})
   const [config, setConfig] = useState<AiConfig | null>(null)
 
@@ -69,13 +79,15 @@ export default function Cards() {
     try {
       setCards(await fetchCards())
       // Plan info only decorates the list, so failures here are not fatal.
-      const [p, im, cfg] = await Promise.all([
+      const [p, im, rv, cfg] = await Promise.all([
         fetchPlanStates().catch(() => ({})),
         fetchImplementationStates().catch(() => ({})),
+        fetchReviewStates().catch(() => ({})),
         fetchAiConfig().catch(() => null),
       ])
       setPlans(p)
       setImpls(im)
+      setReviews(rv)
       setConfig(cfg)
     } catch (e) {
       setError((e as Error).message)
@@ -141,7 +153,16 @@ export default function Cards() {
                 )
               }
             />
-            <StepButton label="Review" status="blocked" />
+            <StepButton
+              label="Review"
+              status={reviewStep(impls[card.key], reviews[card.key])}
+              onRun={() =>
+                run(
+                  () => startReview(card.key),
+                  () => setReviews((r) => ({ ...r, [card.key]: 'running' })),
+                )
+              }
+            />
           </Box>
           <CardActionArea component={RouterLink} to={`/cards/${card.key}`}>
             <CardContent>
@@ -151,7 +172,14 @@ export default function Cards() {
               </Typography>
               <Chip label={card.status} size="small" />
               {card.priority && <Chip label={card.priority} size="small" color="warning" />}
-              {plans[card.key] === 'approved' ? (
+              {plans[card.key] === 'approved' && impls[card.key] === 'completed' ? (
+                <Chip
+                  label={`Review: ${reviews[card.key] ?? 'available'}`}
+                  size="small"
+                  color={reviews[card.key] ? undefined : 'primary'}
+                  variant="outlined"
+                />
+              ) : plans[card.key] === 'approved' ? (
                 <Chip
                   label={`Implementation: ${impls[card.key] ?? 'available'}`}
                   size="small"

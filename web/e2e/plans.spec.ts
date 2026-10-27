@@ -36,9 +36,40 @@ async function mockBackend(page: Page, cardOver = {}) {
   const posts: unknown[] = []
   let impl: Record<string, unknown> | null = null
   let implPolls = 0
+  let rev: Record<string, unknown> | null = null
+  let reviewPolls = 0
+  const review = (over = {}) => ({
+    card_key: 'AB-1',
+    version: 1,
+    implementation_version: 1,
+    state: 'clean',
+    branch: 'AB-1_add_dark_mode',
+    base_commit: 'abc',
+    head_before: 'def',
+    fix_commits: [],
+    notes: [],
+    report: '## Review summary\n\nNo issues found',
+    error: null,
+    created_at: 't',
+    updated_at: 't',
+    ...over,
+  })
+  await page.route('**/api/cards/AB-1/review', (route) => {
+    if (route.request().method() === 'POST') {
+      rev = review({ state: 'running', report: null })
+      reviewPolls = 0
+      return route.fulfill({ status: 202, json: rev })
+    }
+    if (!rev) return route.fulfill({ status: 404, json: { detail: 'No review exists' } })
+    if (rev.state === 'running' && ++reviewPolls >= 2) rev = review()
+    return route.fulfill({ json: rev })
+  })
   await page.route('**/api/cards', (route) => route.fulfill({ json: [card(cardOver)] }))
   await page.route('**/api/plans', (route) =>
     route.fulfill({ json: current ? { 'AB-1': current.state } : {} }),
+  )
+  await page.route('**/api/reviews', (route) =>
+    route.fulfill({ json: rev ? { 'AB-1': rev.state } : {} }),
   )
   await page.route('**/api/implementations', (route) =>
     route.fulfill({ json: impl ? { 'AB-1': impl.state } : {} }),
@@ -207,4 +238,21 @@ test('Plan button on My Cards opens a ready plan expanded', async ({ page }) => 
   await page.getByRole('button', { name: 'Plan', exact: true }).click()
   await expect(page).toHaveURL(/open=plan/)
   await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeVisible()
+})
+
+test('a completed implementation can be reviewed from the card and the list', async ({ page }) => {
+  await mockBackend(page)
+  await page.goto('/cards/AB-1')
+  await page.getByRole('button', { name: 'Run plan', exact: true }).click()
+  await page.getByRole('button', { name: 'Review plan', exact: true }).click()
+  await page.getByRole('button', { name: 'Approve', exact: true }).click()
+  await page.getByRole('button', { name: 'Start implementation', exact: true }).click()
+
+  await page.getByRole('button', { name: 'Start review', exact: true }).click({ timeout: 15_000 })
+  await page.getByRole('button', { name: /^Review clean/ }).click({ timeout: 15_000 })
+  await expect(page.getByRole('heading', { name: 'Review summary' })).toBeVisible()
+
+  await page.getByRole('link', { name: 'Back to My Cards' }).click()
+  await expect(page.getByText('Review: clean')).toBeVisible()
+  await expect(page.getByRole('img', { name: 'Review', exact: true })).toBeVisible()
 })

@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, expect, test, vi } from 'vitest'
-import { card, mockApi, plan } from '../test-utils'
+import { card, implementation, mockApi, plan } from '../test-utils'
 import CardDetail, { POLL_MS } from './CardDetail'
 
 afterEach(() => {
@@ -202,6 +202,23 @@ test('implementation section appears only once the plan is approved', async () =
   })
   renderDetail()
   expect(await screen.findByRole('button', { name: 'Start implementation' })).toBeInTheDocument()
+})
+
+test('review section appears only once the implementation is completed', async () => {
+  const base = {
+    '/api/cards/AB-1': { body: detail() },
+    '/api/cards/AB-1/plan': { body: plan({ state: 'approved' }) },
+    '/api/cards/AB-1/review': NO_PLAN,
+  }
+  mockApi({ ...base, '/api/cards/AB-1/implementation': { body: implementation({ state: 'failed' }) } })
+  renderDetail()
+  await screen.findByRole('button', { name: 'Retry implementation' })
+  expect(screen.queryByRole('heading', { name: 'Review' })).not.toBeInTheDocument()
+  vi.unstubAllGlobals()
+
+  mockApi({ ...base, '/api/cards/AB-1/implementation': { body: implementation() } })
+  renderDetail()
+  expect(await screen.findByRole('button', { name: 'Start review' })).toBeInTheDocument()
 })
 
 test('Approve records the decision', async () => {
