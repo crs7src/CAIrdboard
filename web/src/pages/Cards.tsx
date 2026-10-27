@@ -9,18 +9,39 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { useCallback, useEffect, useState } from 'react'
 import { Link as RouterLink } from 'react-router-dom'
-import { fetchCards, type Card as JiraCard } from '../api'
+import {
+  fetchAiConfig,
+  fetchCards,
+  fetchPlanStates,
+  type AiConfig,
+  type Card as JiraCard,
+  type PlanState,
+} from '../api'
+
+function isEligible(config: AiConfig | null, status: string) {
+  const wanted = status.trim().toLowerCase()
+  return !!config?.eligible_statuses.some((s) => s.trim().toLowerCase() === wanted)
+}
 
 export default function Cards() {
   const [cards, setCards] = useState<JiraCard[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [plans, setPlans] = useState<Record<string, PlanState>>({})
+  const [config, setConfig] = useState<AiConfig | null>(null)
 
   const sync = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
       setCards(await fetchCards())
+      // Plan info only decorates the list, so failures here are not fatal.
+      const [p, cfg] = await Promise.all([
+        fetchPlanStates().catch(() => ({})),
+        fetchAiConfig().catch(() => null),
+      ])
+      setPlans(p)
+      setConfig(cfg)
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -60,11 +81,17 @@ export default function Cards() {
         <Card key={card.key} variant="outlined">
           <CardContent>
             <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
-              <Link href={card.url} target="_blank" rel="noreferrer" sx={{ fontWeight: "bold" }}>
+              <Link component={RouterLink} to={`/cards/${card.key}`} sx={{ fontWeight: 'bold' }}>
                 {card.key}
               </Link>
               <Chip label={card.status} size="small" />
               {card.priority && <Chip label={card.priority} size="small" color="warning" />}
+              {plans[card.key] && <Chip label={`Plan: ${plans[card.key]}`} size="small" variant="outlined" />}
+              {!plans[card.key] && isEligible(config, card.status) && (
+                <Button size="small" component={RouterLink} to={`/cards/${card.key}`}>
+                  Plan
+                </Button>
+              )}
             </Stack>
             <Typography sx={{ mt: 1 }}>{card.summary}</Typography>
           </CardContent>

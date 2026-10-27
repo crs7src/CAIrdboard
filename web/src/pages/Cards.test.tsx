@@ -2,73 +2,93 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, expect, test, vi } from 'vitest'
+import { card, mockApi } from '../test-utils'
 import Cards from './Cards'
 
 afterEach(() => vi.unstubAllGlobals())
 
-const card = (key: string, priority: string | null = 'High') => ({
-  key,
-  summary: `Summary ${key}`,
-  status: 'To Do',
-  priority,
-  url: `https://x.atlassian.net/browse/${key}`,
-})
+const config = {
+  eligible_statuses: ['To Do', 'Backlog'],
+  project_repos: {},
+}
 
-test('lists cards returned by the API', async () => {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn().mockResolvedValue({ ok: true, json: async () => [card('AB-1'), card('AB-2', null)] }),
-  )
+function renderCards() {
   render(
     <MemoryRouter>
       <Cards />
     </MemoryRouter>,
   )
-  expect(await screen.findByRole('link', { name: 'AB-1' })).toHaveAttribute(
-    'href',
-    'https://x.atlassian.net/browse/AB-1',
-  )
-  expect(screen.getByText(/Summary AB-2/)).toBeInTheDocument()
+}
+
+test('lists cards with links to their detail page', async () => {
+  mockApi({
+    '/api/cards': { body: [card('AB-1'), card('AB-2', { priority: null })] },
+    '/api/plans': { body: {} },
+    '/api/ai-config': { body: config },
+  })
+  renderCards()
+  expect(await screen.findByRole('link', { name: 'AB-1' })).toHaveAttribute('href', '/cards/AB-1')
+  expect(screen.getByText('Summary AB-2')).toBeInTheDocument()
   expect(screen.getAllByText('High')).toHaveLength(1)
-  expect(screen.getAllByText('To Do')).toHaveLength(2)
+})
+
+test('eligible cards without a plan get a Plan button; others do not', async () => {
+  mockApi({
+    '/api/cards': {
+      body: [card('AB-1'), card('AB-2', { status: 'Testing' }), card('AB-3', { status: 'ready to play' })],
+    },
+    '/api/plans': { body: {} },
+    '/api/ai-config': { body: { ...config, eligible_statuses: ['To Do', 'Ready to Play'] } },
+  })
+  renderCards()
+  await screen.findByRole('link', { name: 'AB-1' })
+  const buttons = screen.getAllByRole('link', { name: 'Plan' })
+  expect(buttons.map((b) => b.getAttribute('href'))).toEqual(['/cards/AB-1', '/cards/AB-3'])
+})
+
+test('shows the plan state chip for cards that have a plan', async () => {
+  mockApi({
+    '/api/cards': { body: [card('AB-1')] },
+    '/api/plans': { body: { 'AB-1': 'approved' } },
+    '/api/ai-config': { body: config },
+  })
+  renderCards()
+  expect(await screen.findByText('Plan: approved')).toBeInTheDocument()
+  expect(screen.queryByRole('link', { name: 'Plan' })).not.toBeInTheDocument()
+})
+
+test('still lists cards if plan info fails to load', async () => {
+  mockApi({ '/api/cards': { body: [card('AB-1')] } })
+  renderCards()
+  expect(await screen.findByRole('link', { name: 'AB-1' })).toBeInTheDocument()
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
 })
 
 test('shows an empty state', async () => {
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => [] }))
-  render(
-    <MemoryRouter>
-      <Cards />
-    </MemoryRouter>,
-  )
+  mockApi({ '/api/cards': { body: [] } })
+  renderCards()
   expect(await screen.findByText('No cards assigned to you.')).toBeInTheDocument()
 })
 
-test('shows the server error detail', async () => {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn().mockResolvedValue({ ok: false, status: 503, json: async () => ({ detail: 'Jira is not configured' }) }),
-  )
-  render(
-    <MemoryRouter>
-      <Cards />
-    </MemoryRouter>,
-  )
+test('shows the server error detail with a link to settings', async () => {
+  mockApi({
+    '/api/cards': { status: 503, body: { detail: 'Jira is not configured' } },
+  })
+  renderCards()
   expect(await screen.findByRole('alert')).toHaveTextContent('Jira is not configured')
+  expect(screen.getByRole('link', { name: 'Update your Jira settings' })).toHaveAttribute(
+    'href',
+    '/settings',
+  )
 })
 
 test('Sync button refetches cards', async () => {
-  const fetchMock = vi
-    .fn()
-    .mockResolvedValueOnce({ ok: true, json: async () => [card('AB-1')] })
-    .mockResolvedValueOnce({ ok: true, json: async () => [card('AB-1'), card('AB-3')] })
-  vi.stubGlobal('fetch', fetchMock)
-  render(
-    <MemoryRouter>
-      <Cards />
-    </MemoryRouter>,
-  )
+  const fetchMock = mockApi({
+    '/api/cards': [{ body: [card('AB-1')] }, { body: [card('AB-1'), card('AB-3')] }],
+  })
+  renderCards()
   await screen.findByRole('link', { name: 'AB-1' })
   await userEvent.click(screen.getByRole('button', { name: 'Sync' }))
   expect(await screen.findByRole('link', { name: 'AB-3' })).toBeInTheDocument()
-  expect(fetchMock).toHaveBeenCalledTimes(2)
+  expect(fetchMock.mock.calls.filter(([u]) => u === '/api/cards')).toHaveLength(2)
 })

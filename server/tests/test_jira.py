@@ -53,6 +53,8 @@ def test_cards_are_normalized(client):
             "status": "To Do",
             "priority": "High",
             "url": f"{BASE}/browse/AB-1",
+            "project": "AB",
+            "description": "",
         },
         {
             "key": "AB-2",
@@ -60,6 +62,8 @@ def test_cards_are_normalized(client):
             "status": "To Do",
             "priority": None,
             "url": f"{BASE}/browse/AB-2",
+            "project": "AB",
+            "description": "",
         },
     ]
     request = route.calls.last.request

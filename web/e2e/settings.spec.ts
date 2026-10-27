@@ -17,7 +17,7 @@ test('user can set up Jira credentials from Settings', async ({ page }) => {
   })
 
   await page.goto('/')
-  await page.getByRole('link', { name: 'Settings' }).click()
+  await page.getByRole('link', { name: 'Settings', exact: true }).click()
   await page.getByLabel('Jira site URL').fill('https://a.atlassian.net')
   await page.getByLabel('Jira email').fill('me@x.com')
   await page.getByLabel('Jira API token').fill('my-secret')

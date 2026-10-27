@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     jira_email: str = ""
     jira_api_token: str = ""
     jira_credentials_file: Path = Path("data/jira.json")
+    ai_config_file: Path = Path("data/ai_config.json")
+    plans_dir: Path = Path("data/plans")
+    copilot_command: str = "copilot"
+    plan_timeout_seconds: float = 900
 
     @property
     def jira_configured(self) -> bool:

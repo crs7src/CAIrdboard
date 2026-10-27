@@ -9,6 +9,7 @@ const links = [
   { to: '/', label: 'Home' },
   { to: '/cards', label: 'My Cards' },
   { to: '/settings', label: 'Settings' },
+  { to: '/ai-settings', label: 'AI Settings' },
 ]
 
 export default function Layout() {
