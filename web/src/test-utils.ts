@@ -39,6 +39,10 @@ export const card = (key: string, over: Record<string, unknown> = {}) => ({
   url: `https://x.atlassian.net/browse/${key}`,
   project: key.split('-')[0],
   description: `Description of ${key}`,
+  comments: [],
+  status_history: [],
+  reopened: false,
+  last_reopened_at: null,
   ...over,
 })
 

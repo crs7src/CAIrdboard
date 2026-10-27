@@ -55,6 +55,10 @@ def test_cards_are_normalized(client):
             "url": f"{BASE}/browse/AB-1",
             "project": "AB",
             "description": "",
+            "comments": [],
+            "status_history": [],
+            "reopened": False,
+            "last_reopened_at": None,
         },
         {
             "key": "AB-2",
@@ -64,6 +68,10 @@ def test_cards_are_normalized(client):
             "url": f"{BASE}/browse/AB-2",
             "project": "AB",
             "description": "",
+            "comments": [],
+            "status_history": [],
+            "reopened": False,
+            "last_reopened_at": None,
         },
     ]
     request = route.calls.last.request

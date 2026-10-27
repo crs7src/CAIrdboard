@@ -11,7 +11,7 @@ DEFAULT_ELIGIBLE_STATUSES = [
     "Merge Requested",
     "To Do",
     "In Progress",
-    "Reopened"
+    "Reopened",
 ]
 
 

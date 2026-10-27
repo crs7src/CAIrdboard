@@ -1,3 +1,4 @@
+import httpx
 import pytest
 import respx
 from fastapi.testclient import TestClient
@@ -66,8 +67,38 @@ def client(env, runner):
         yield c
 
 
-def mock_issue(**kwargs):
+def jira_comment(text, author="Ann", created="2026-01-02T10:00:00.000+0000"):
+    return {
+        "author": {"displayName": author},
+        "created": created,
+        "body": {
+            "type": "doc",
+            "content": [
+                {"type": "paragraph", "content": [{"type": "text", "text": text}]}
+            ],
+        },
+    }
+
+
+def status_change(from_s, to_s, created, author="Ann"):
+    return {
+        "created": created,
+        "author": {"displayName": author},
+        "items": [
+            {"field": "status", "fromString": from_s, "toString": to_s},
+            {"field": "assignee", "fromString": "x", "toString": "y"},
+        ],
+    }
+
+
+def mock_issue(comments=(), history=(), **kwargs):
     key = kwargs.get("key", "AB-1")
+    respx.get(f"{BASE}/rest/api/3/issue/{key}/changelog").respond(
+        json={"values": list(history), "total": len(history), "isLast": True}
+    )
+    respx.get(f"{BASE}/rest/api/3/issue/{key}/comment").respond(
+        json={"comments": list(comments), "total": len(comments)}
+    )
     return respx.get(f"{BASE}/rest/api/3/issue/{key}").respond(json=issue(**kwargs))
 
 
@@ -151,6 +182,7 @@ def _card(**kw):
         "url": "u",
         "project": "AB",
         "description": "Details here",
+        "comments": [],
     }
     return Card(**{**base, **kw})
 
@@ -169,6 +201,197 @@ def test_prompt_includes_card_and_feedback():
     for text in ("AB-1", "Do thing", "Details here", "OLD PLAN", "Too vague"):
         assert text in prompt
     assert "OLD PLAN" not in planner.build_prompt(_card(), prev, None)
+
+
+def _comments():
+    from app.jira import Comment
+
+    return [
+        Comment(author="Ann", created="d1", body="Button is the wrong color"),
+        Comment(author="Bob", created="d2", body="Also fix the label"),
+    ]
+
+
+def test_prompt_includes_comments_in_order():
+    prompt = planner.build_prompt(_card(comments=_comments()), None, None)
+    assert prompt.index("Button is the wrong color") < prompt.index(
+        "Also fix the label"
+    )
+    assert "Ann (d1)" in prompt and "Bob (d2)" in prompt
+
+
+def test_prompt_notes_when_there_are_no_comments():
+    assert "(no comments)" in planner.build_prompt(_card(), None, None)
+
+
+def test_reopened_uses_comment_focused_skill_mode():
+    prompt = planner.build_prompt(
+        _card(status="Reopened", comments=_comments()), None, None
+    )
+    assert "COMMENTS are the source of truth" in prompt
+    assert "Plan the work from scratch" not in prompt
+    assert "name: card-planner" not in prompt  # frontmatter is stripped
+
+
+def test_other_statuses_use_from_scratch_mode():
+    for status in ("Backlog", "DEV In Progress", "Merge Requested"):
+        prompt = planner.build_prompt(_card(status=status), None, None)
+        assert "Plan the work from scratch" in prompt
+        assert "COMMENTS are the source of truth" not in prompt
+
+
+def test_reopened_detection_is_case_and_hyphen_insensitive():
+    assert planner.is_reopened(" re-opened ") and planner.is_reopened("REOPENED")
+    assert not planner.is_reopened("In Progress")
+
+
+def test_previously_reopened_card_in_other_status_uses_rework_mode():
+    card = _card(status="Merge Requested", reopened=True, comments=_comments())
+    prompt = planner.build_prompt(card, None, None)
+    assert "COMMENTS are the source of truth" in prompt
+    assert "Plan the work from scratch" not in prompt
+
+
+def test_rework_prompt_marks_new_comments_and_lists_history():
+    from app.jira import StatusChange
+
+    comments = _comments()
+    comments[1].after_reopen = True
+    history = [
+        StatusChange(
+            from_status="Done", to_status="Reopened", when="2026-01-01", author="Ann"
+        )
+    ]
+    card = _card(
+        status="In Progress", reopened=True, comments=comments, status_history=history
+    )
+    prompt = planner.build_prompt(card, None, None)
+    assert "Done -> Reopened" in prompt
+    comments_block = prompt.split("Comments (oldest first):")[1]
+    assert comments_block.count("[AFTER LATEST REOPEN]") == 1
+    assert comments_block.index("Also fix the label") > comments_block.index(
+        "[AFTER LATEST REOPEN]"
+    )
+
+
+def test_never_reopened_card_has_no_history_or_markers():
+    comments = _comments()
+    comments[0].after_reopen = True
+    prompt = planner.build_prompt(_card(comments=comments), None, None)
+    assert "AFTER LATEST REOPEN" not in prompt.split("Comments (oldest first):")[1]
+    assert "This card has been Reopened" not in prompt
+
+
+def test_missing_or_incomplete_skill_raises(tmp_path):
+    with pytest.raises(planner.SkillError):
+        planner.load_skill(False, tmp_path / "nope.md")
+    partial = tmp_path / "s.md"
+    partial.write_text("intro\n## Mode: default\nbody")
+    assert "body" in planner.load_skill(False, partial)
+    with pytest.raises(planner.SkillError):
+        planner.load_skill(True, partial)
+
+
+@respx.mock
+def test_card_detail_includes_comments_and_pages_through_them(client):
+    respx.get(f"{BASE}/rest/api/3/issue/AB-1").respond(json=issue())
+    respx.get(f"{BASE}/rest/api/3/issue/AB-1/changelog").respond(
+        json={"values": [], "total": 0, "isLast": True}
+    )
+    route = respx.get(f"{BASE}/rest/api/3/issue/AB-1/comment")
+    route.side_effect = [
+        httpx.Response(200, json={"comments": [jira_comment("one")], "total": 2}),
+        httpx.Response(
+            200, json={"comments": [jira_comment("two", "Bob")], "total": 2}
+        ),
+    ]
+    body = client.get("/api/cards/AB-1").json()
+    assert [(c["author"], c["body"]) for c in body["comments"]] == [
+        ("Ann", "one"),
+        ("Bob", "two"),
+    ]
+    assert route.call_count == 2
+
+
+@respx.mock
+def test_history_detects_past_reopen_and_marks_newer_comments(client):
+    mock_issue(
+        status="Merge Requested",
+        comments=[
+            jira_comment("before", created="2026-01-01T09:00:00.000+0000"),
+            jira_comment("after", created="2026-01-03T09:00:00.000+0000"),
+        ],
+        history=[
+            status_change("Done", "Reopened", "2026-01-02T09:00:00.000+0000"),
+            status_change("Reopened", "In Progress", "2026-01-02T12:00:00.000+0000"),
+            status_change(
+                "In Progress", "Merge Requested", "2026-01-04T09:00:00.000+0000"
+            ),
+        ],
+    )
+    body = client.get("/api/cards/AB-1").json()
+    assert body["reopened"] is True
+    assert body["last_reopened_at"] == "2026-01-02T09:00:00.000+0000"
+    assert [c["after_reopen"] for c in body["comments"]] == [False, True]
+    assert [(h["from_status"], h["to_status"]) for h in body["status_history"]] == [
+        ("Done", "Reopened"),
+        ("Reopened", "In Progress"),
+        ("In Progress", "Merge Requested"),
+    ]
+
+
+@respx.mock
+def test_never_reopened_card_is_not_flagged(client):
+    mock_issue(
+        history=[status_change("To Do", "In Progress", "2026-01-02T09:00:00.000+0000")]
+    )
+    body = client.get("/api/cards/AB-1").json()
+    assert body["reopened"] is False and body["last_reopened_at"] is None
+
+
+@respx.mock
+def test_currently_reopened_card_is_flagged_even_without_history(client):
+    mock_issue(status="Reopened")
+    assert client.get("/api/cards/AB-1").json()["reopened"] is True
+
+
+@respx.mock
+def test_changelog_is_paged(client):
+    respx.get(f"{BASE}/rest/api/3/issue/AB-1").respond(json=issue())
+    respx.get(f"{BASE}/rest/api/3/issue/AB-1/comment").respond(
+        json={"comments": [], "total": 0}
+    )
+    route = respx.get(f"{BASE}/rest/api/3/issue/AB-1/changelog")
+    route.side_effect = [
+        httpx.Response(
+            200,
+            json={
+                "values": [status_change("A", "B", "2026-01-01T00:00:00.000+0000")],
+                "total": 2,
+                "isLast": False,
+            },
+        ),
+        httpx.Response(
+            200,
+            json={
+                "values": [
+                    status_change("B", "Reopened", "2026-01-02T00:00:00.000+0000")
+                ],
+                "total": 2,
+                "isLast": True,
+            },
+        ),
+    ]
+    assert client.get("/api/cards/AB-1").json()["reopened"] is True
+    assert route.call_count == 2
+
+
+@respx.mock
+def test_reopened_card_prompt_sent_to_ai_contains_comments(client, runner):
+    mock_issue(status="Reopened", comments=[jira_comment("Please fix X")])
+    assert client.post("/api/cards/AB-1/plan").status_code == 202
+    prompt = runner.calls[0][0][runner.calls[0][0].index("-p") + 1]
+    assert "Please fix X" in prompt and "COMMENTS are the source of truth" in prompt
 
 
 def test_args_are_read_only_and_shell_free():

@@ -8,6 +8,10 @@ const card = (over = {}) => ({
   url: 'https://x.atlassian.net/browse/AB-1',
   project: 'AB',
   description: 'Do the first thing',
+  comments: [{ author: 'Ann', created: '2026-01-02T10:00:00.000+0000', body: 'Fix the button color', after_reopen: false }],
+  status_history: [],
+  reopened: false,
+  last_reopened_at: null,
   eligible: true,
   repo_configured: true,
   ...over,
@@ -63,6 +67,8 @@ test('generate, review and approve a plan for a card', async ({ page }) => {
   await page.getByRole('link', { name: 'Plan', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'AB-1' })).toBeVisible()
   await expect(page.getByText('Do the first thing')).toBeVisible()
+  await expect(page.getByText('Comments (1)')).toBeVisible()
+  await expect(page.getByText('Fix the button color')).toBeVisible()
 
   await page.getByRole('button', { name: 'Generate plan' }).click()
   await expect(page.getByRole('heading', { name: 'Steps' })).toBeVisible({ timeout: 10_000 })
@@ -85,6 +91,17 @@ test('reject a plan and regenerate it with feedback', async ({ page }) => {
   await page.getByRole('button', { name: 'Regenerate plan' }).click()
   await expect(page.getByText('v2')).toBeVisible({ timeout: 10_000 })
   expect(posts).toEqual([{ feedback: null }, { feedback: 'Missing tests' }])
+})
+
+test('a card reopened earlier but now In Progress is flagged as rework', async ({ page }) => {
+  await mockBackend(page, {
+    status: 'In Progress',
+    reopened: true,
+    status_history: [{ from_status: 'Done', to_status: 'Reopened', when: '2026-01-02T09:00:00.000+0000', author: 'Ann' }],
+  })
+  await page.goto('/cards/AB-1')
+  await expect(page.getByText('Reopened before')).toBeVisible()
+  await expect(page.getByText('Done → Reopened')).toBeVisible()
 })
 
 test('cards in testing status cannot get a plan', async ({ page }) => {

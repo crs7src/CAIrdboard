@@ -36,6 +36,54 @@ test('shows card details and a Generate button when there is no plan', async () 
   expect(screen.getByRole('button', { name: 'Generate plan' })).toBeInTheDocument()
 })
 
+test('shows the card comments with authors', async () => {
+  const comments = [
+    { author: 'Ann', created: '2026-01-02T10:00:00.000+0000', body: 'Button is the wrong color' },
+    { author: 'Bob', created: '2026-01-03T10:00:00.000+0000', body: 'Also fix the label' },
+  ]
+  mockApi({ '/api/cards/AB-1': { body: detail({ comments }) }, '/api/cards/AB-1/plan': NO_PLAN })
+  renderDetail()
+  expect(await screen.findByText('Comments (2)')).toBeInTheDocument()
+  expect(screen.getByText('Button is the wrong color')).toBeInTheDocument()
+  expect(screen.getByText(/Bob/)).toBeInTheDocument()
+})
+
+test('flags a card that was reopened earlier and marks newer comments', async () => {
+  mockApi({
+    '/api/cards/AB-1': {
+      body: detail({
+        status: 'In Progress',
+        reopened: true,
+        last_reopened_at: '2026-01-02T09:00:00.000+0000',
+        status_history: [
+          { from_status: 'Done', to_status: 'Reopened', when: '2026-01-02T09:00:00.000+0000', author: 'Ann' },
+          { from_status: 'Reopened', to_status: 'In Progress', when: '2026-01-03T09:00:00.000+0000', author: 'Bob' },
+        ],
+        comments: [{ author: 'Ann', created: '2026-01-02T10:00:00.000+0000', body: 'Fix it', after_reopen: true }],
+      }),
+    },
+    '/api/cards/AB-1/plan': NO_PLAN,
+  })
+  renderDetail()
+  expect(await screen.findByText('Reopened before')).toBeInTheDocument()
+  expect(screen.getByText('after reopen')).toBeInTheDocument()
+  expect(screen.getByText(/Done → Reopened, Reopened → In Progress/)).toBeInTheDocument()
+})
+
+test('does not flag a card that was never reopened', async () => {
+  mockApi({ '/api/cards/AB-1': { body: detail() }, '/api/cards/AB-1/plan': NO_PLAN })
+  renderDetail()
+  await screen.findByText('Comments (0)')
+  expect(screen.queryByText('Reopened before')).not.toBeInTheDocument()
+})
+
+test('shows an empty state when the card has no comments', async () => {
+  mockApi({ '/api/cards/AB-1': { body: detail() }, '/api/cards/AB-1/plan': NO_PLAN })
+  renderDetail()
+  expect(await screen.findByText('Comments (0)')).toBeInTheDocument()
+  expect(screen.getByText('No comments.')).toBeInTheDocument()
+})
+
 test('ineligible card explains why and offers no Generate button', async () => {
   mockApi({
     '/api/cards/AB-1': { body: detail({ status: 'Testing', eligible: false }) },

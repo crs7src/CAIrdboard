@@ -9,6 +9,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from app.jira import Card
+from app.jira import is_reopened_status as is_reopened
 
 PlanState = Literal["running", "ready", "failed", "approved", "rejected"]
 
@@ -66,14 +67,64 @@ async def run_command(args: list[str], cwd: str, timeout: float) -> CommandResul
     return CommandResult(proc.returncode or 0, out.decode(), err.decode())
 
 
-def build_prompt(card: Card, previous: Plan | None, feedback: str | None) -> str:
+SKILL_PATH = (
+    Path(__file__).resolve().parent.parent / "skills" / "card-planner" / "SKILL.md"
+)
+MODE_HEADING = "## Mode: "
+
+
+class SkillError(Exception):
+    pass
+
+
+def needs_rework(card: Card) -> bool:
+    """Once a card has been Reopened it is rework, even after moving on."""
+    return card.reopened or is_reopened(card.status)
+
+
+def load_skill(rework: bool, path: Path = SKILL_PATH) -> str:
+    """Return the skill's shared preamble plus the section for this card's status."""
+    try:
+        text = path.read_text()
+    except OSError as e:
+        raise SkillError(f"Planner skill file could not be read: {path}") from e
+    if text.startswith("---"):
+        text = text.split("---", 2)[-1]
+    preamble, *modes = text.split(MODE_HEADING)
+    wanted = "reopened" if rework else "default"
+    for mode in modes:
+        name, _, body = mode.partition("\n")
+        if name.strip().casefold() == wanted:
+            return f"{preamble.strip()}\n\n{MODE_HEADING}{name.strip()}\n{body.strip()}"
+    raise SkillError(f"Planner skill has no '{wanted}' mode")
+
+
+def format_comments(card: Card) -> str:
+    if not card.comments:
+        return "(no comments)"
+    rework = needs_rework(card)
+    return "\n\n".join(
+        f"[{i}] {c.author} ({c.created})"
+        f"{' [AFTER LATEST REOPEN]' if rework and c.after_reopen else ''}:\n{c.body}"
+        for i, c in enumerate(card.comments, 1)
+    )
+
+
+def format_history(card: Card) -> str:
+    return "\n".join(
+        f"- {c.when}: {c.from_status or '(none)'} -> {c.to_status} ({c.author})"
+        for c in card.status_history
+    )
+
+
+def build_prompt(
+    card: Card,
+    previous: Plan | None,
+    feedback: str | None,
+    skill: str | None = None,
+) -> str:
     parts = [
-        (
-            "You are planning work on a Jira card in the repository in your current "
-            "working directory. Explore the code with your read-only tools, then write "
-            "an implementation plan. Do NOT modify any files and do NOT write code "
-            "changes; output only the plan."
-        ),
+        skill if skill is not None else load_skill(needs_rework(card)),
         "",
         f"Card: {card.key} - {card.summary}",
         f"Jira status: {card.status}",
@@ -82,11 +133,15 @@ def build_prompt(card: Card, previous: Plan | None, feedback: str | None) -> str
         "Description:",
         card.description or "(no description)",
         "",
-        (
-            "Format the plan as Markdown with these sections: Summary, Files to "
-            "change, Steps, Tests, Risks and open questions."
-        ),
+        "Comments (oldest first):",
+        format_comments(card),
     ]
+    if needs_rework(card) and card.status_history:
+        parts += [
+            "",
+            "This card has been Reopened. Status history (oldest first):",
+            format_history(card),
+        ]
     if previous and previous.plan and feedback:
         parts += [
             "",

@@ -1,3 +1,17 @@
+export interface Comment {
+  author: string
+  created: string
+  body: string
+  after_reopen: boolean
+}
+
+export interface StatusChange {
+  from_status: string
+  to_status: string
+  when: string
+  author: string
+}
+
 export interface Card {
   key: string
   summary: string
@@ -6,6 +20,10 @@ export interface Card {
   url: string
   project: string
   description: string
+  comments: Comment[]
+  status_history: StatusChange[]
+  reopened: boolean
+  last_reopened_at: string | null
 }
 
 export async function fetchCards(): Promise<Card[]> {

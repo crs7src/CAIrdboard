@@ -1,3 +1,6 @@
+import Accordion from '@mui/material/Accordion'
+import AccordionDetails from '@mui/material/AccordionDetails'
+import AccordionSummary from '@mui/material/AccordionSummary'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -8,6 +11,7 @@ import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { useCallback, useEffect, useState } from 'react'
 import Markdown from 'react-markdown'
 import { Link as RouterLink, useParams } from 'react-router-dom'
@@ -80,6 +84,7 @@ export default function CardDetail() {
           {card.key}
         </Typography>
         <Chip label={card.status} />
+        {card.reopened && <Chip label="Reopened before" color="error" variant="outlined" />}
         {card.priority && <Chip label={card.priority} color="warning" />}
         <Link href={card.url} target="_blank" rel="noreferrer">
           Open in Jira
@@ -91,6 +96,32 @@ export default function CardDetail() {
       <Typography sx={{ whiteSpace: 'pre-wrap' }} color="text.secondary">
         {card.description || 'No description.'}
       </Typography>
+      {card.reopened && card.status_history.length > 0 && (
+        <Typography variant="body2" color="text.secondary">
+          History: {card.status_history.map((h) => `${h.from_status} → ${h.to_status}`).join(', ')}
+        </Typography>
+      )}
+      <Accordion defaultExpanded disableGutters>
+        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+          <Typography>Comments ({card.comments.length})</Typography>
+        </AccordionSummary>
+        <AccordionDetails>
+          <Stack spacing={2}>
+            {card.comments.length === 0 && (
+              <Typography color="text.secondary">No comments.</Typography>
+            )}
+            {card.comments.map((c, i) => (
+              <Box key={i}>
+                <Typography variant="subtitle2">
+                  {c.author} · {new Date(c.created).toLocaleString()}
+                  {c.after_reopen && <Chip label="after reopen" size="small" sx={{ ml: 1 }} />}
+                </Typography>
+                <Typography sx={{ whiteSpace: 'pre-wrap' }}>{c.body}</Typography>
+              </Box>
+            ))}
+          </Stack>
+        </AccordionDetails>
+      </Accordion>
 
       {error && <Alert severity="error">{error}</Alert>}
       {!card.eligible && (
