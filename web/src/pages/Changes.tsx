@@ -1,8 +1,4 @@
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
-import Accordion from '@mui/material/Accordion'
-import AccordionDetails from '@mui/material/AccordionDetails'
-import AccordionSummary from '@mui/material/AccordionSummary'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -12,6 +8,7 @@ import List from '@mui/material/List'
 import ListItemButton from '@mui/material/ListItemButton'
 import ListItemText from '@mui/material/ListItemText'
 import MenuItem from '@mui/material/MenuItem'
+import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
@@ -59,7 +56,6 @@ const diffTheme = {
   '--diff-code-delete-edit-background-color': '#8a2f36',
   '--diff-selection-background-color': '#264f78',
   fontSize: 13,
-  overflowX: 'auto',
 }
 
 export default function Changes() {
@@ -69,6 +65,7 @@ export default function Changes() {
   const [commits, setCommits] = useState<ChangesData['commits']>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [selectedPath, setSelectedPath] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -98,6 +95,7 @@ export default function Changes() {
     () => (data ? parseDiff(data.diff).filter((f) => f.oldPath || f.newPath) : []),
     [data],
   )
+  const selected = files.find((f) => filePath(f) === selectedPath) ?? files[0]
   const totals = useMemo(
     () =>
       files.reduce(
@@ -119,7 +117,7 @@ export default function Changes() {
   )
 
   return (
-    <Stack spacing={2}>
+    <Stack spacing={2} sx={{ height: 'calc(100vh - 96px)', minHeight: 400 }}>
       {back}
       <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
         <Typography variant="h4" component="h1">
@@ -165,19 +163,20 @@ export default function Changes() {
         </Alert>
       )}
 
-      {files.length > 0 && (
-        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ alignItems: 'flex-start' }}>
+      {selected && (
+        <Stack direction="row" spacing={2} sx={{ flex: 1, minHeight: 0 }}>
           <List
             dense
             aria-label="Changed files"
-            sx={{ width: { md: 300 }, flexShrink: 0, position: { md: 'sticky' }, top: { md: 16 } }}
+            sx={{ width: 300, flexShrink: 0, overflowY: 'auto' }}
           >
-            {files.map((file, i) => {
+            {files.map((file) => {
               const { added, removed } = countLines(file)
               return (
                 <ListItemButton
                   key={`${file.oldPath}-${file.newPath}`}
-                  onClick={() => document.getElementById(`file-${i}`)?.scrollIntoView?.({ block: 'start' })}
+                  selected={file === selected}
+                  onClick={() => setSelectedPath(filePath(file))}
                 >
                   <ListItemText
                     primary={filePath(file)}
@@ -188,51 +187,47 @@ export default function Changes() {
               )
             })}
           </List>
-          <Stack spacing={2} sx={{ flexGrow: 1, minWidth: 0 }}>
-            {files.map((file, i) => {
-              const { added, removed } = countLines(file)
-              const status = STATUS[file.type] ?? STATUS.modify
-              return (
-                <Accordion
-                  key={`${file.oldPath}-${file.newPath}`}
-                  id={`file-${i}`}
-                  defaultExpanded
-                  disableGutters
-                  variant="outlined"
-                >
-                  <AccordionSummary component="div" expandIcon={<ExpandMoreIcon />}>
-                    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
-                      <Typography sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
-                        {filePath(file)}
-                      </Typography>
-                      <Chip label={status.label} size="small" color={status.color} />
-                      <Typography variant="body2" sx={{ color: 'success.main' }}>
-                        +{added}
-                      </Typography>
-                      <Typography variant="body2" sx={{ color: 'error.main' }}>
-                        −{removed}
-                      </Typography>
-                    </Stack>
-                  </AccordionSummary>
-                  <AccordionDetails sx={{ p: 0 }}>
-                    {file.hunks.length === 0 ? (
-                      <Typography color="text.secondary" sx={{ p: 2 }}>
-                        No textual changes (binary file or mode change).
-                      </Typography>
-                    ) : (
-                      <Box sx={diffTheme}>
-                        <Diff viewType="unified" diffType={file.type} hunks={file.hunks}>
-                          {(hunks) => hunks.map((h) => <Hunk key={h.content} hunk={h} />)}
-                        </Diff>
-                      </Box>
-                    )}
-                  </AccordionDetails>
-                </Accordion>
-              )
-            })}
-          </Stack>
+          <FilePane file={selected} />
         </Stack>
       )}
     </Stack>
+  )
+}
+
+function FilePane({ file }: { file: FileData }) {
+  const { added, removed } = countLines(file)
+  const status = STATUS[file.type] ?? STATUS.modify
+  return (
+    <Paper
+      variant="outlined"
+      aria-label="File diff"
+      sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}
+    >
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', p: 1.5 }}>
+        <Typography sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
+          {filePath(file)}
+        </Typography>
+        <Chip label={status.label} size="small" color={status.color} />
+        <Typography variant="body2" sx={{ color: 'success.main' }}>
+          +{added}
+        </Typography>
+        <Typography variant="body2" sx={{ color: 'error.main' }}>
+          −{removed}
+        </Typography>
+      </Stack>
+      <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+        {file.hunks.length === 0 ? (
+          <Typography color="text.secondary" sx={{ p: 2 }}>
+            No textual changes (binary file or mode change).
+          </Typography>
+        ) : (
+          <Box sx={diffTheme}>
+            <Diff viewType="unified" diffType={file.type} hunks={file.hunks}>
+              {(hunks) => hunks.map((h) => <Hunk key={h.content} hunk={h} />)}
+            </Diff>
+          </Box>
+        )}
+      </Box>
+    </Paper>
   )
 }

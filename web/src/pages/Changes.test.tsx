@@ -28,11 +28,21 @@ test('lists changed files with status and line counts, and shows each diff', asy
   expect(list.getByText('src/new.ts')).toBeInTheDocument()
   expect(list.getByText('gone.txt')).toBeInTheDocument()
 
-  expect(screen.getByText('modified')).toBeInTheDocument()
+  // Only the first file is shown; the others appear when selected.
+  const pane = within(screen.getByLabelText('File diff'))
+  expect(pane.getByText('modified')).toBeInTheDocument()
+  expect(pane.getByText('new line')).toBeInTheDocument()
+  expect(pane.getByText('old line')).toBeInTheDocument()
+  expect(screen.queryByText('one')).not.toBeInTheDocument()
+  expect(screen.queryByText('bye')).not.toBeInTheDocument()
+
+  await userEvent.click(list.getByText('src/new.ts'))
   expect(screen.getByText('added')).toBeInTheDocument()
+  expect(screen.getByText('two')).toBeInTheDocument()
+  expect(screen.queryByText('new line')).not.toBeInTheDocument()
+
+  await userEvent.click(list.getByText('gone.txt'))
   expect(screen.getByText('deleted')).toBeInTheDocument()
-  expect(screen.getByText('new line')).toBeInTheDocument()
-  expect(screen.getByText('old line')).toBeInTheDocument()
   expect(screen.getByText('bye')).toBeInTheDocument()
   expect(screen.getByText(/^\+3$/)).toBeInTheDocument()
   expect(screen.getByText(/^−2$/)).toBeInTheDocument()
