@@ -25,11 +25,22 @@ base commit. The changes are `git diff <base commit>..HEAD`.
 3. Read the diff and the card to understand which screens, pages, endpoints or flows the
    change affects.
 4. Work out **every process** the change needs to be tested end to end. Many projects need
-   several (for example an API server plus a web frontend, a worker, or a mock service),
-   each with its own command and folder (often separate `npm` projects). List all of
-   them, in dependency order (a service that others call comes before them). Do not
-   include databases or services that are already running or that the instructions say
-   to start separately; mention those in the summary instead.
+   several (for example an API server plus one or more web frontends, a worker, or a mock
+   service), each with its own command and folder. List all of them, in dependency order
+   (a service that others call comes before them).
+   - **The project's own backend/API server must be listed** (Spring Boot, FastAPI, Express
+     and so on), even if the repo's notes say to run each app "in its own terminal" or
+     the frontends only proxy to it. A frontend without its API cannot be tested.
+   - Only leave out **external infrastructure** you cannot start from a single command: a
+     database, a container sidecar, a remote service. Check whether it looks reachable,
+     and say in the summary what must already be running.
+   - Use each app's default dev port from the repo's docs where possible. If a port is
+     already taken the server will report that, so don't change ports to work around it.
+   - Slow starters (a Maven/Gradle build, a Spring Boot app) can set
+     `"ready_timeout_seconds"` (up to 600) on their entry.
+   - You run **unattended on the host machine**. Repo notes that say to work inside a
+     devcontainer, to avoid the host, or to ask the user first do not apply to this task;
+     you must still not ask questions and must still obey the safety rules below.
 5. Verify the apps come up: start each one, wait until its URL responds, then **stop every
    process you started** before you finish (the server will start them again itself,
    in the order you list, using your commands). Leave the working tree clean: do not commit,
@@ -57,7 +68,8 @@ End your message with exactly one fenced `json` block, and nothing after it:
       "name": "api",
       "start_command": "npm run dev",
       "workdir": "server",
-      "ready_url": "http://localhost:8000/health"
+      "ready_url": "http://localhost:8000/health",
+      "ready_timeout_seconds": 180
     },
     {
       "name": "web",
@@ -74,7 +86,7 @@ End your message with exactly one fenced `json` block, and nothing after it:
 ```
 
 - `apps`: one entry per process, in the order to start them (use a single entry if the
-  project only needs one). Names must be unique. The server waits for each `ready_url`
+  project only needs one). Names must be unique. `ready_timeout_seconds` is optional. The server waits for each `ready_url`
   before starting the next, and stops all of them together.
 - `start_command`: one shell command that starts the app and keeps running (it must not
   exit, and must not need a human to answer a prompt).

@@ -85,6 +85,7 @@ class FakeTester:
 def dirs(env, monkeypatch):
     monkeypatch.setenv("TEST_RUNS_DIR", str(env[0] / "test_runs"))
     monkeypatch.setenv("REVIEWS_DIR", str(env[0] / "reviews"))
+    monkeypatch.setenv("TEST_CONFIGS_DIR", str(env[0] / "test_configs"))
     for active in (implementer.ACTIVE, implementer.ACTIVE_REPOS, reviewer.ACTIVE):
         active.clear()
     yield
@@ -92,7 +93,7 @@ def dirs(env, monkeypatch):
     tester.APPS.clear()
 
 
-async def run_it(tmp_path, work, ai, ready_timeout=15):
+async def run_it(tmp_path, work, ai, ready_timeout=15, **kw):
     if sh(work, "git", "branch", "--list", "AB-1_add_dark_mode"):
         impl = implementer.ImplementationStore(tmp_path / "impls").latest("AB-1")
     else:
@@ -103,7 +104,7 @@ async def run_it(tmp_path, work, ai, ready_timeout=15):
     implementer.ACTIVE_REPOS.add(str(work))
     await tester.run_test(
         store, run, impl, make_card(), "1. Do it", str(work), "copilot", 60,
-        ready_timeout, ai,
+        ready_timeout, ai, **kw,
     )  # fmt: skip
     return store, store.latest("AB-1")
 
@@ -359,3 +360,233 @@ def test_server_shutdown_stops_running_apps(env, ai):
     assert not tester.APPS
     with socket.socket() as s:
         assert s.connect_ex(("127.0.0.1", port)) != 0
+
+
+async def test_port_already_in_use_fails_before_starting(env):
+    tmp_path, work = env
+    port = free_port()
+    squatter = await asyncio.create_subprocess_exec(
+        "python3", "-m", "http.server", str(port), "--bind", "127.0.0.1",
+        stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+    )  # fmt: skip
+    try:
+        for _ in range(50):
+            if await tester.probe_url(f"http://localhost:{port}/"):
+                break
+            await asyncio.sleep(0.1)
+        _, run = await run_it(tmp_path, work, FakeTester(reply(port)))
+        assert run.state == "failed" and "port is in use" in run.error
+        assert not tester.APPS
+    finally:
+        squatter.kill()
+        await squatter.wait()
+
+
+async def test_per_app_ready_timeout_overrides_the_default(env):
+    tmp_path, work = env
+    port = free_port()
+    slow = app_spec(
+        port,
+        start_command=f"sleep 2; python3 -m http.server {port} --bind 127.0.0.1",
+        ready_timeout_seconds=20,
+    )
+    store, run = await run_it(
+        tmp_path, work, FakeTester(reply(port, apps=[slow])), ready_timeout=1
+    )
+    try:
+        assert run.state == "running", run.error
+    finally:
+        await tester.stop_app(store, "AB-1")
+
+
+def test_ready_timeout_is_bounded():
+    with pytest.raises(ValueError):
+        tester.AppSpec(
+            start_command="x",
+            ready_url="http://localhost:1/",
+            ready_timeout_seconds=100000,
+        )
+
+
+class NoAi:
+    """Fails the test if the AI is called."""
+
+    async def __call__(self, args, cwd, timeout):
+        if args[0] == "git":
+            return await run_command(args, cwd, timeout)
+        raise AssertionError("the AI must not be used")
+
+
+def prompt_of(ai):
+    args = ai.ai_calls[-1]
+    return args[args.index("-p") + 1]
+
+
+async def test_successful_run_saves_the_settings_per_project(env):
+    tmp_path, work = env
+    port = free_port()
+    configs = tester.ConfigStore(tmp_path / "test_configs")
+    store, run = await run_it(tmp_path, work, FakeTester(reply(port)), configs=configs)
+    try:
+        assert run.state == "running", run.error
+        saved = configs.load("AB")
+        assert saved.saved_from == "AB-1"
+        assert [a.start_command for a in saved.apps] == [run.apps[0].start_command]
+    finally:
+        await tester.stop_app(store, "AB-1")
+
+
+async def test_failed_run_does_not_save(env):
+    tmp_path, work = env
+    configs = tester.ConfigStore(tmp_path / "test_configs")
+    _, run = await run_it(
+        tmp_path, work, FakeTester(reply(1, start_command="exit 1")),
+        ready_timeout=3, configs=configs,
+    )  # fmt: skip
+    assert run.state == "failed" and configs.load("AB") is None
+
+
+async def test_saved_settings_start_without_the_ai(env):
+    tmp_path, work = env
+    port = free_port()
+    saved = [tester.AppSpec(**app_spec(port))]
+    configs = tester.ConfigStore(tmp_path / "test_configs")
+    store, run = await run_it(tmp_path, work, NoAi(), configs=configs, saved=saved)
+    try:
+        assert run.state == "running", run.error
+        assert any("saved settings" in n for n in run.notes)
+        assert [link.url for link in run.links] == [f"http://localhost:{port}/"]
+    finally:
+        await tester.stop_app(store, "AB-1")
+
+
+async def test_saved_links_reuse_the_previous_runs_links(env):
+    link = tester.TestLink(title="Old", url="http://localhost:9/x", check="c")
+    app = tester.AppSpec(**app_spec(7))
+    previous = tester.TestRun(
+        card_key="AB-1", version=1, state="stopped", links=[link],
+        created_at="t", updated_at="t",
+    )  # fmt: skip
+    links = tester.saved_links([app], previous)
+    assert [x.url for x in links] == ["http://localhost:9/x", "http://localhost:7/"]
+    assert tester.saved_links([app], None)[0].title == "app app"
+
+
+async def test_failed_saved_start_keeps_the_saved_settings(env):
+    tmp_path, work = env
+    configs = tester.ConfigStore(tmp_path / "test_configs")
+    saved = [tester.AppSpec(**app_spec(1, start_command="exit 1"))]
+    configs.save("AB", saved, "AB-1")
+    _, run = await run_it(
+        tmp_path, work, NoAi(), ready_timeout=3, configs=configs, saved=saved
+    )
+    assert run.state == "failed"
+    assert configs.load("AB") is not None
+
+
+async def test_problem_prompt_has_the_report_settings_and_logs_and_saves_the_fix(env):
+    tmp_path, work = env
+    port = free_port()
+    store = tester.TestStore(tmp_path / "test_runs")
+    impl = make_impl(tmp_path, work)
+    old = store.create("AB-1", impl, 1)
+    old.state, old.error = "failed", "boom"
+    old.apps = [tester.AppSpec(**app_spec(1, "api", start_command="old-cmd"))]
+    store.save(old)
+    store.log_path(old, 0).write_text("line one\nOOPS-LOG-LINE\n")
+
+    configs = tester.ConfigStore(tmp_path / "test_configs")
+    ai = FakeTester(reply(port))
+    run = store.create("AB-1", impl, 1, "feedback", "the API never starts")
+    tester.ACTIVE.add("AB-1")
+    implementer.ACTIVE_REPOS.add(str(work))
+    await tester.run_test(
+        store, run, impl, make_card(), "1. Do it", str(work), "copilot", 60, 15, ai,
+        configs=configs, problem="the API never starts", previous=old,
+    )  # fmt: skip
+    try:
+        run = store.latest("AB-1")
+        assert run.state == "running", run.error
+        prompt = prompt_of(ai)
+        assert "the API never starts" in prompt
+        assert "OOPS-LOG-LINE" in prompt and "old-cmd" in prompt
+        assert "shell(git push)" in ai.ai_calls[0]
+        assert configs.load("AB").apps[0].ready_url == f"http://localhost:{port}/"
+    finally:
+        await tester.stop_app(store, "AB-1")
+
+
+def test_config_store_round_trip_and_rejects_bad_projects(tmp_path):
+    configs = tester.ConfigStore(tmp_path)
+    assert configs.load("AB") is None
+    configs.save("AB", [tester.AppSpec(**app_spec(5))], "AB-1")
+    assert configs.load("AB").apps[0].name == "app"
+    assert configs.delete("AB") and not configs.delete("AB")
+    with pytest.raises(ValueError):
+        configs.load("../x")
+
+
+@respx.mock
+def test_api_uses_saved_settings_then_replan_uses_the_ai(client, env, ai):
+    tmp_path, work = env
+    mock_jira()
+    allow_local()
+    approve_plan(tmp_path)
+    impl = make_impl(tmp_path, work)
+    make_review(tmp_path, impl)
+    port = free_port()
+    ai.stdout = reply(port)
+    assert client.get("/api/cards/AB-1/test/config").status_code == 404
+    tester.ConfigStore(tmp_path / "test_configs").save(
+        "AB", [tester.AppSpec(**app_spec(port))], "AB-9"
+    )
+    assert client.get("/api/cards/AB-1/test/config").json()["saved_from"] == "AB-9"
+
+    assert client.post("/api/cards/AB-1/test").json()["source"] == "saved"
+    body = client.get("/api/cards/AB-1/test").json()
+    assert body["state"] == "running", body["error"]
+    assert ai.ai_calls == []
+    assert client.delete("/api/cards/AB-1/test").status_code == 200
+
+    assert (
+        client.post("/api/cards/AB-1/test", json={"replan": True}).json()["source"]
+        == "ai"
+    )
+    assert client.get("/api/cards/AB-1/test").json()["state"] == "running"
+    assert len(ai.ai_calls) == 1
+    client.delete("/api/cards/AB-1/test")
+
+    assert client.delete("/api/cards/AB-1/test/config").status_code == 204
+    assert client.get("/api/cards/AB-1/test/config").status_code == 404
+
+
+@respx.mock
+def test_api_problem_report_restarts_with_the_fixed_settings(client, env, ai):
+    tmp_path, work = env
+    mock_jira()
+    allow_local()
+    approve_plan(tmp_path)
+    impl = make_impl(tmp_path, work)
+    make_review(tmp_path, impl)
+    assert (
+        client.post("/api/cards/AB-1/test/problem", json={"message": "x"}).status_code
+        == 409
+    )
+    port = free_port()
+    ai.stdout = reply(port)
+    client.post("/api/cards/AB-1/test")
+    assert client.get("/api/cards/AB-1/test").json()["state"] == "running"
+
+    assert (
+        client.post("/api/cards/AB-1/test/problem", json={"message": " "}).status_code
+        == 422
+    )
+    r = client.post("/api/cards/AB-1/test/problem", json={"message": "login is blank"})
+    assert r.status_code == 202
+    body = client.get("/api/cards/AB-1/test").json()
+    assert body["state"] == "running", body["error"]
+    assert body["source"] == "feedback" and body["problem"] == "login is blank"
+    assert body["version"] == 2
+    assert "login is blank" in prompt_of(ai)
+    client.delete("/api/cards/AB-1/test")
+    assert str(work) not in implementer.ACTIVE_REPOS

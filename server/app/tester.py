@@ -35,9 +35,14 @@ from app.skills import SkillError
 # preparing: the AI is working out how to run the app, or the app is starting;
 # running: the app is up; stopped: it was stopped or exited; failed: it never came up.
 TestState = Literal["preparing", "running", "stopped", "failed"]
+# ai: the AI worked out how to run it; saved: reused the project's saved settings;
+# feedback: the AI fixed the settings after the user reported a problem.
+TestSource = Literal["ai", "saved", "feedback"]
+PROJECT_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 JSON_BLOCK_RE = re.compile(r"```json\s*(.*?)```", re.DOTALL)
 LOG_TAIL_LINES = 30
+MAX_READY_TIMEOUT = 600
 
 
 class TesterError(Exception):
@@ -85,6 +90,9 @@ class AppSpec(BaseModel):
     start_command: str
     workdir: str = "."
     ready_url: str
+    ready_timeout_seconds: Annotated[int, Field(ge=1, le=MAX_READY_TIMEOUT)] | None = (
+        None
+    )
 
     @field_validator("name")
     @classmethod
@@ -136,6 +144,8 @@ class TestRun(BaseModel):
     review_version: int | None = None
     state: TestState
     branch: str | None = None
+    source: TestSource = "ai"
+    problem: str | None = None
     apps: list[AppSpec] = []
     links: list[TestLink] = []
     notes: list[str] = []
@@ -183,7 +193,14 @@ class TestStore:
         runs = self.versions(key)
         return runs[-1] if runs else None
 
-    def create(self, key: str, impl: Implementation, review_version: int) -> TestRun:
+    def create(
+        self,
+        key: str,
+        impl: Implementation,
+        review_version: int,
+        source: TestSource = "ai",
+        problem: str | None = None,
+    ) -> TestRun:
         latest = self.latest(key)
         now = _now()
         run = TestRun(
@@ -191,6 +208,8 @@ class TestStore:
             version=(latest.version + 1) if latest else 1,
             review_version=review_version,
             state="preparing",
+            source=source,
+            problem=problem,
             branch=impl.branch,
             created_at=now,
             updated_at=now,
@@ -206,6 +225,58 @@ class TestStore:
         tmp.write_text(run.model_dump_json(indent=2))
         os.replace(tmp, path)
         return run
+
+
+class SavedConfig(BaseModel):
+    """How the project's apps were last started successfully."""
+
+    project: str
+    apps: list[AppSpec]
+    saved_from: str
+    saved_at: str
+
+
+class ConfigStore:
+    """One JSON file per Jira project: <root>/<PROJECT>.json."""
+
+    def __init__(self, root: Path):
+        self.root = root
+
+    def _path(self, project: str) -> Path:
+        if not PROJECT_RE.match(project):
+            raise ValueError(f"Invalid project key: {project}")
+        return self.root / f"{project}.json"
+
+    def load(self, project: str) -> SavedConfig | None:
+        path = self._path(project)
+        if not path.exists():
+            return None
+        try:
+            return SavedConfig.model_validate_json(path.read_text())
+        except ValueError:
+            return None
+
+    def save(self, project: str, apps: list[AppSpec], card_key: str) -> SavedConfig:
+        config = SavedConfig(
+            project=project, apps=apps, saved_from=card_key, saved_at=_now()
+        )
+        path = self._path(project)
+        self.root.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(config.model_dump_json(indent=2))
+        os.replace(tmp, path)
+        return config
+
+    def delete(self, project: str) -> bool:
+        path = self._path(project)
+        if not path.exists():
+            return False
+        path.unlink()
+        return True
+
+
+def project_of(card_key: str) -> str:
+    return card_key.rsplit("-", 1)[0]
 
 
 @dataclass
@@ -270,6 +341,52 @@ def build_prompt(
     if impl.report:
         parts += ["", "Implementer's report:", impl.report]
     return "\n".join(parts)
+
+
+def load_fix_skill() -> str:
+    return skills.strip_frontmatter(skills.read("testfix"))
+
+
+def app_logs(store: TestStore, run: TestRun | None) -> str:
+    """The log tail of each app of a previous run, for the fixing AI."""
+    if run is None:
+        return "(no previous run)"
+    parts = []
+    for i, spec in enumerate(run.apps):
+        tail = log_tail(store.log_path(run, i)) or "(empty)"
+        parts.append(f"--- log of '{spec.name}' (last lines) ---\n{tail}")
+    if run.error:
+        parts.append(f"--- error recorded for the run ---\n{run.error}")
+    return "\n\n".join(parts) or "(no apps were started)"
+
+
+def build_fix_prompt(
+    card: Card,
+    impl: Implementation,
+    apps: list[AppSpec],
+    problem: str,
+    logs: str,
+    skill: str | None = None,
+) -> str:
+    return "\n".join(
+        [
+            skills.AGENTS_PREAMBLE,
+            "",
+            skill if skill is not None else load_fix_skill(),
+            "",
+            f"Card: {card.key} - {card.summary}",
+            f"Current branch (already checked out): {impl.branch}",
+            "",
+            "Current run settings (JSON):",
+            json.dumps([a.model_dump(exclude_none=True) for a in apps], indent=2),
+            "",
+            "Problem reported by the user:",
+            problem,
+            "",
+            "Output of the apps from the last attempt:",
+            logs,
+        ]
+    )
 
 
 def build_args(command: str, prompt: str) -> list[str]:
@@ -415,6 +532,18 @@ async def _watch(
     release(run.card_key, running.repo)
 
 
+def saved_links(apps: list[AppSpec], previous: TestRun | None) -> list[TestLink]:
+    """Without the AI there is nothing new to say about what to check, so reuse the
+    card's earlier links and add each app's own URL."""
+    links = list(previous.links) if previous else []
+    seen = {link.url for link in links}
+    for spec in apps:
+        if spec.ready_url not in seen:
+            links.append(TestLink(title=f"{spec.name} app", url=spec.ready_url))
+            seen.add(spec.ready_url)
+    return links
+
+
 async def run_test(
     store: TestStore,
     run: TestRun,
@@ -428,8 +557,16 @@ async def run_test(
     runner=run_command,
     spawner=start_app,
     probe=probe_url,
+    *,
+    configs: ConfigStore | None = None,
+    saved: list[AppSpec] | None = None,
+    problem: str | None = None,
+    previous: TestRun | None = None,
 ) -> None:
-    """Work out how to run the card's branch, start it and wait until it responds.
+    """Start the card's branch for manual testing and wait until it responds.
+
+    The apps come from the project's saved settings (`saved`, no AI), from the AI, or
+    from the AI fixing the settings after the user reported a `problem`.
 
     Never raises. On success the app keeps running (and the repo stays locked)
     until it is stopped.
@@ -443,45 +580,66 @@ async def run_test(
             )
         await _git(runner, repo, "checkout", branch)
 
-        prompt = build_prompt(card, plan_text, impl, skill)
-        result = await runner(build_args(command, prompt), repo, timeout)
-        output = result.stdout.strip()
-        if result.returncode != 0:
-            raise ImplementationError(
-                (result.stderr.strip() or output or "The AI exited with an error")[
-                    :2000
-                ]
-            )
-        current = await _git(runner, repo, "rev-parse", "--abbrev-ref", "HEAD")
-        if current != branch:
-            raise ImplementationError(
-                f"The AI left the branch (now on '{current}', expected '{branch}')"
-            )
-        if await _git(runner, repo, "status", "--porcelain"):
-            run.notes.append("Some changes were left uncommitted in the working tree.")
+        if saved is not None and problem is None:
+            apps, links, summary = saved, saved_links(saved, previous), None
+            run.notes.append("Started with the project's saved settings (no AI used).")
+        else:
+            if problem is not None:
+                fix_apps = (previous.apps if previous else []) or saved or []
+                prompt = build_fix_prompt(
+                    card, impl, fix_apps, problem, app_logs(store, previous)
+                )
+            else:
+                prompt = build_prompt(card, plan_text, impl, skill)
+            result = await runner(build_args(command, prompt), repo, timeout)
+            output = result.stdout.strip()
+            if result.returncode != 0:
+                raise ImplementationError(
+                    (result.stderr.strip() or output or "The AI exited with an error")[
+                        :2000
+                    ]
+                )
+            current = await _git(runner, repo, "rev-parse", "--abbrev-ref", "HEAD")
+            if current != branch:
+                raise ImplementationError(
+                    f"The AI left the branch (now on '{current}', expected '{branch}')"
+                )
+            if await _git(runner, repo, "status", "--porcelain"):
+                run.notes.append(
+                    "Some changes were left uncommitted in the working tree."
+                )
+            parsed = parse_output(output)
+            apps, links, summary = parsed.apps, parsed.links, parsed.summary or None
 
-        plan = parse_output(output)
-        workdirs = [resolve_workdir(repo, a.workdir) for a in plan.apps]
-        run.apps, run.links = plan.apps, plan.links
-        run.report = plan.summary or None
+        workdirs = [resolve_workdir(repo, a.workdir) for a in apps]
+        run.apps, run.links, run.report = apps, links, summary
         store.save(run)
 
         running = Running(repo, [], [])
         APPS[run.card_key] = running
-        for i, (spec, workdir) in enumerate(zip(plan.apps, workdirs, strict=True)):
+        for i, (spec, workdir) in enumerate(zip(apps, workdirs, strict=True)):
             log = store.log_path(run, i)
+            if await probe(spec.ready_url):
+                raise TesterError(
+                    f"{spec.ready_url} already responds before the '{spec.name}' app "
+                    "started, so its port is in use by another process. Stop that "
+                    "process and try again."
+                )
+            wait = spec.ready_timeout_seconds or ready_timeout
             process = await spawner(spec.start_command, workdir, log)
             running.processes.append((spec.name, process))
-            if not await wait_ready(process, spec.ready_url, ready_timeout, probe):
+            if not await wait_ready(process, spec.ready_url, wait, probe):
                 why = (
                     f"The '{spec.name}' app exited (code {process.returncode})"
                     if process.returncode is not None
                     else f"The '{spec.name}' app did not respond at {spec.ready_url} "
-                    f"within {int(ready_timeout)}s"
+                    f"within {int(wait)}s"
                 )
                 raise TesterError(f"{why}.\n{log_tail(log)}".strip())
         run.state = "running"
         store.save(run)
+        if configs is not None:
+            configs.save(project_of(run.card_key), apps, run.card_key)
         running.monitors = [
             asyncio.create_task(_watch(store, run, running, name, process))
             for name, process in running.processes

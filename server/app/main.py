@@ -622,15 +622,26 @@ def test_states(settings: SettingsDep) -> dict[str, str]:
     return states
 
 
-@app.post("/api/cards/{key}/test", status_code=202)
-async def start_test(
-    key: str,
-    settings: SettingsDep,
-    runner: RunnerDep,
-    background: BackgroundTasks,
-) -> tester.TestRun:
-    """Have an AI work out how to run the reviewed branch, then run it for manual testing."""
-    key = _valid_key(key)
+class StartTestBody(BaseModel):
+    replan: bool = False
+
+
+class TestProblemBody(BaseModel):
+    __test__ = False
+
+    message: str
+
+    @field_validator("message")
+    @classmethod
+    def not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Describe the problem")
+        return v[:4000]
+
+
+async def _test_context(settings: Settings, key: str):
+    """Everything a test run needs, or an HTTP error if the card is not ready."""
     impl = implementer.ImplementationStore(settings.implementations_dir).latest(key)
     if impl is None or impl.state != "completed" or not impl.branch:
         raise HTTPException(409, "The card has no completed implementation to test")
@@ -641,25 +652,55 @@ async def start_test(
     if plan is None or not plan.plan:
         raise HTTPException(409, "The card has no plan")
     card = await _load_card(settings, key)
-    repo = _repo_for_key(settings, key)
+    return impl, review, plan, card, _repo_for_key(settings, key)
 
-    store = tester.TestStore(settings.test_runs_dir)
-    previous = tester.recover_stale(store, store.latest(key))
-    if (
-        key in tester.ACTIVE
-        or key in implementer.ACTIVE
-        or key in reviewer.ACTIVE
-        or key in feedback.ACTIVE
-        or (previous and previous.state in ("preparing", "running"))
-    ):
+
+def _check_test_free(key: str, repo: str, previous, stoppable: bool) -> None:
+    """409 if the card or repo is busy. A running test app of this card may be
+    replaced when `stoppable`."""
+    own_app = key in tester.APPS
+    replaceable = stoppable and own_app
+    other_busy = (
+        key in implementer.ACTIVE or key in reviewer.ACTIVE or key in feedback.ACTIVE
+    )
+    own_busy = (key in tester.ACTIVE and not replaceable) or (
+        previous is not None
+        and (
+            previous.state == "preparing"
+            or (previous.state == "running" and not stoppable)
+        )
+    )
+    if other_busy or own_busy:
         raise HTTPException(409, "This card is already being worked on")
-    if repo in implementer.ACTIVE_REPOS:
+    if repo in implementer.ACTIVE_REPOS and not replaceable:
         raise HTTPException(
             409,
             "Another run or a running test app is using this repo. Wait or stop it first.",
         )
 
-    run = store.create(key, impl, review.version)
+
+@app.post("/api/cards/{key}/test", status_code=202)
+async def start_test(
+    key: str,
+    settings: SettingsDep,
+    runner: RunnerDep,
+    background: BackgroundTasks,
+    body: StartTestBody | None = None,
+) -> tester.TestRun:
+    """Run the reviewed branch for manual testing.
+
+    Uses the project's saved settings when there are some (no AI involved), unless
+    `replan` is set; otherwise an AI works out how to run it.
+    """
+    key = _valid_key(key)
+    impl, review, plan, card, repo = await _test_context(settings, key)
+    store = tester.TestStore(settings.test_runs_dir)
+    previous = tester.recover_stale(store, store.latest(key))
+    _check_test_free(key, repo, previous, stoppable=False)
+
+    configs = tester.ConfigStore(settings.test_configs_dir)
+    saved = None if body and body.replan else configs.load(tester.project_of(key))
+    run = store.create(key, impl, review.version, "saved" if saved else "ai")
     tester.ACTIVE.add(key)
     implementer.ACTIVE_REPOS.add(repo)
     background.add_task(
@@ -674,8 +715,70 @@ async def start_test(
         settings.test_timeout_seconds,
         settings.test_ready_timeout_seconds,
         runner,
+        configs=configs,
+        saved=saved.apps if saved else None,
+        previous=previous,
     )
     return run
+
+
+@app.post("/api/cards/{key}/test/problem", status_code=202)
+async def report_test_problem(
+    key: str,
+    body: TestProblemBody,
+    settings: SettingsDep,
+    runner: RunnerDep,
+    background: BackgroundTasks,
+) -> tester.TestRun:
+    """Tell an AI what is not running right; it fixes the run settings and the apps restart."""
+    key = _valid_key(key)
+    impl, review, plan, card, repo = await _test_context(settings, key)
+    store = tester.TestStore(settings.test_runs_dir)
+    previous = tester.recover_stale(store, store.latest(key))
+    if previous is None:
+        raise HTTPException(409, "Start the test before reporting a problem")
+    _check_test_free(key, repo, previous, stoppable=True)
+    if key in tester.APPS:
+        await tester.stop_app(store, key)
+
+    configs = tester.ConfigStore(settings.test_configs_dir)
+    saved = configs.load(tester.project_of(key))
+    run = store.create(key, impl, review.version, "feedback", body.message)
+    tester.ACTIVE.add(key)
+    implementer.ACTIVE_REPOS.add(repo)
+    background.add_task(
+        tester.run_test,
+        store,
+        run,
+        impl,
+        card,
+        plan.plan,
+        repo,
+        settings.copilot_command,
+        settings.test_timeout_seconds,
+        settings.test_ready_timeout_seconds,
+        runner,
+        configs=configs,
+        saved=saved.apps if saved else None,
+        problem=body.message,
+        previous=previous,
+    )
+    return run
+
+
+@app.get("/api/cards/{key}/test/config")
+def get_test_config(key: str, settings: SettingsDep) -> tester.SavedConfig:
+    key = _valid_key(key)
+    config = tester.ConfigStore(settings.test_configs_dir).load(tester.project_of(key))
+    if config is None:
+        raise HTTPException(404, "No saved test settings for this project")
+    return config
+
+
+@app.delete("/api/cards/{key}/test/config", status_code=204)
+def forget_test_config(key: str, settings: SettingsDep) -> None:
+    key = _valid_key(key)
+    tester.ConfigStore(settings.test_configs_dir).delete(tester.project_of(key))
 
 
 @app.get("/api/cards/{key}/test")

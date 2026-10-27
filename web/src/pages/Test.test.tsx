@@ -2,6 +2,13 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, test, vi } from 'vitest'
 import { mockApi, testRun } from '../test-utils'
+
+const CONFIG = {
+  project: 'AB',
+  apps: testRun().apps,
+  saved_from: 'AB-1',
+  saved_at: 't',
+}
 import Test, { TEST_POLL_MS } from './Test'
 
 afterEach(() => {
@@ -68,4 +75,61 @@ test('a failure shows the error and can be retried', async () => {
   await open()
   expect(await screen.findByText('port in use')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Test again' })).toBeEnabled()
+})
+
+test('shows saved settings, and Re-plan with AI asks for a fresh plan', async () => {
+  const fetchMock = mockApi({
+    '/api/cards/AB-1/test': { body: testRun({ state: 'stopped' }) },
+    '/api/cards/AB-1/test/config': { body: CONFIG },
+    'POST /api/cards/AB-1/test': { status: 202, body: testRun({ state: 'preparing', links: [] }) },
+  })
+  render(<Test cardKey="AB-1" />)
+  expect(await screen.findByText('saved settings')).toBeInTheDocument()
+  await open()
+  await userEvent.click(await screen.findByRole('button', { name: 'Re-plan with AI' }))
+  const post = fetchMock.mock.calls.find(([, i]) => i?.method === 'POST')!
+  expect(JSON.parse(String(post[1]?.body))).toEqual({ replan: true })
+})
+
+test('Forget saved settings removes them', async () => {
+  const fetchMock = mockApi({
+    '/api/cards/AB-1/test': { body: testRun({ state: 'stopped' }) },
+    '/api/cards/AB-1/test/config': { body: CONFIG },
+    'DELETE /api/cards/AB-1/test/config': { status: 204, body: null },
+  })
+  render(<Test cardKey="AB-1" />)
+  await open()
+  await userEvent.click(await screen.findByRole('button', { name: 'Forget saved settings' }))
+  await vi.waitFor(() => expect(screen.queryByText('saved settings')).not.toBeInTheDocument())
+  expect(fetchMock.mock.calls.some(([, i]) => i?.method === 'DELETE')).toBe(true)
+})
+
+test('reporting a problem sends the message and shows the restart', async () => {
+  const fetchMock = mockApi({
+    '/api/cards/AB-1/test': { body: testRun() },
+    'POST /api/cards/AB-1/test/problem': {
+      status: 202,
+      body: testRun({ state: 'preparing', source: 'feedback', problem: 'login is blank', links: [] }),
+    },
+  })
+  render(<Test cardKey="AB-1" />)
+  await open()
+  const send = await screen.findByRole('button', { name: 'Send problem report' })
+  expect(send).toBeDisabled()
+  await userEvent.type(screen.getByLabelText('Describe what is not running right'), 'login is blank')
+  await userEvent.click(send)
+  expect(await screen.findByText(/Fixing how the app starts/)).toBeInTheDocument()
+  expect(screen.getByText(/Reported problem: login is blank/)).toBeInTheDocument()
+  const post = fetchMock.mock.calls.find(([, i]) => i?.method === 'POST')!
+  expect(JSON.parse(String(post[1]?.body))).toEqual({ message: 'login is blank' })
+})
+
+test('a run from saved settings just says it is starting the app', async () => {
+  mockApi({
+    '/api/cards/AB-1/test': { body: testRun({ state: 'preparing', source: 'saved', links: [] }) },
+  })
+  render(<Test cardKey="AB-1" />)
+  await open()
+  expect(await screen.findByText('Starting app...')).toBeInTheDocument()
+  expect(screen.queryByText(/Working out how to run the app/)).not.toBeInTheDocument()
 })

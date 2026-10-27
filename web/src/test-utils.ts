@@ -99,6 +99,8 @@ export const testRun = (over: Record<string, unknown> = {}) => ({
   version: 1,
   review_version: 1,
   state: 'running',
+  source: 'ai',
+  problem: null,
   branch: 'AB-1_add_dark_mode',
   apps: [{ name: 'web', start_command: 'npm run dev', workdir: '.', ready_url: 'http://localhost:5173/' }],
   links: [{ title: 'Settings page', url: 'http://localhost:5173/settings', check: 'Toggle dark mode' }],

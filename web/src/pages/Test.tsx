@@ -6,6 +6,7 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import Link from '@mui/material/Link'
+import TextField from '@mui/material/TextField'
 import List from '@mui/material/List'
 import ListItem from '@mui/material/ListItem'
 import ListItemText from '@mui/material/ListItemText'
@@ -15,7 +16,16 @@ import Typography from '@mui/material/Typography'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { useEffect, useState } from 'react'
 import Markdown from 'react-markdown'
-import { fetchTest, startTest, stopTest, type TestRun } from '../api'
+import {
+  fetchTest,
+  fetchTestConfig,
+  forgetTestConfig,
+  reportTestProblem,
+  startTest,
+  stopTest,
+  type TestConfig,
+  type TestRun,
+} from '../api'
 import StepButton from './StepButton'
 
 export const TEST_POLL_MS = 3000
@@ -32,6 +42,8 @@ export default function Test({ cardKey }: { cardKey: string }) {
   const [loaded, setLoaded] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [config, setConfig] = useState<TestConfig | null>(null)
+  const [problem, setProblem] = useState('')
 
   useEffect(() => {
     fetchTest(cardKey).then(
@@ -47,6 +59,13 @@ export default function Test({ cardKey }: { cardKey: string }) {
   }, [cardKey])
 
   const preparing = run?.state === 'preparing'
+
+  // Settings are saved when a run comes up, so look again whenever the state changes.
+  useEffect(() => {
+    if (preparing) return
+    fetchTestConfig(cardKey).then(setConfig, () => setConfig(null))
+  }, [cardKey, run?.state, run?.version, preparing])
+
   useEffect(() => {
     if (!preparing) return
     const id = setInterval(() => {
@@ -55,13 +74,25 @@ export default function Test({ cardKey }: { cardKey: string }) {
     return () => clearInterval(id)
   }, [preparing, cardKey])
 
-  async function act(fn: () => Promise<TestRun>) {
+  async function forget() {
+    setError(null)
+    try {
+      await forgetTestConfig(cardKey)
+      setConfig(null)
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  async function act(fn: () => Promise<TestRun>): Promise<boolean> {
     setBusy(true)
     setError(null)
     try {
       setRun(await fn())
+      return true
     } catch (e) {
       setError((e as Error).message)
+      return false
     } finally {
       setBusy(false)
     }
@@ -83,6 +114,7 @@ export default function Test({ cardKey }: { cardKey: string }) {
             size="small"
             color={run?.state === 'running' ? 'success' : run?.state === 'failed' ? 'error' : 'default'}
           />
+          {config && <Chip label="saved settings" size="small" variant="outlined" />}
           <Box sx={{ flexGrow: 1 }} />
           {!active && (
             <span onClick={(e) => e.stopPropagation()}>
@@ -97,7 +129,20 @@ export default function Test({ cardKey }: { cardKey: string }) {
       </AccordionSummary>
       <AccordionDetails>
         <Stack spacing={2}>
-          {preparing && <Typography>Working out how to run the app and starting it...</Typography>}
+          {preparing && (
+            <Typography>
+              {run?.source === 'saved'
+                ? 'Starting app...'
+                : run?.source === 'feedback'
+                  ? 'Fixing how the app starts and restarting it...'
+                  : 'Working out how to run the app and starting it...'}
+            </Typography>
+          )}
+          {run?.problem && (
+            <Alert severity="info" role="note">
+              Reported problem: {run.problem}
+            </Alert>
+          )}
           {run?.notes.map((n) => (
             <Alert key={n} severity="info" role="note">
               {n}
@@ -165,6 +210,38 @@ export default function Test({ cardKey }: { cardKey: string }) {
               <Typography variant="body2" color="text.secondary">
                 Stop the app when you finish: nothing else can use the repo while it runs.
               </Typography>
+            </Stack>
+          )}
+          {!preparing && (config || run) && (
+            <Stack spacing={1}>
+              <TextField
+                label="Describe what is not running right"
+                size="small"
+                multiline
+                minRows={2}
+                value={problem}
+                onChange={(e) => setProblem(e.target.value)}
+                helperText="An AI will fix how the apps are started (not the code) and restart them."
+              />
+              <Stack direction="row" spacing={1}>
+                <Button
+                  variant="contained"
+                  disabled={busy || !problem.trim() || !run}
+                  onClick={() => act(() => reportTestProblem(cardKey, problem.trim())).then((ok) => ok && setProblem(''))}
+                >
+                  Send problem report
+                </Button>
+                {config && !active && (
+                  <Button disabled={busy} onClick={() => act(() => startTest(cardKey, true))}>
+                    Re-plan with AI
+                  </Button>
+                )}
+                {config && (
+                  <Button color="inherit" disabled={busy} onClick={forget}>
+                    Forget saved settings
+                  </Button>
+                )}
+              </Stack>
             </Stack>
           )}
           {!run && !error && (

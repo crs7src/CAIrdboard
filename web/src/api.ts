@@ -127,7 +127,7 @@ export async function saveAiConfig(config: AiConfig): Promise<AiConfig> {
 }
 
 export interface Skill {
-  step: 'planner' | 'implementer' | 'reviewer' | 'feedback' | 'tester'
+  step: 'planner' | 'implementer' | 'reviewer' | 'feedback' | 'tester' | 'testfix'
   content: string
   default_content: string
   customized: boolean
@@ -281,8 +281,10 @@ export interface TestRun {
   version: number
   review_version: number | null
   state: TestState
+  source: 'ai' | 'saved' | 'feedback'
+  problem: string | null
   branch: string | null
-  apps: { name: string; start_command: string; workdir: string; ready_url: string }[]
+  apps: { name: string; start_command: string; workdir: string; ready_url: string; ready_timeout_seconds?: number | null }[]
   links: { title: string; url: string; check: string }[]
   notes: string[]
   report: string | null
@@ -298,8 +300,42 @@ export async function fetchTest(key: string): Promise<TestRun | null> {
   return response.json()
 }
 
-export async function startTest(key: string): Promise<TestRun> {
-  const response = await fetch(`/api/cards/${key}/test`, { method: 'POST' })
+export async function startTest(key: string, replan = false): Promise<TestRun> {
+  const response = await fetch(
+    `/api/cards/${key}/test`,
+    replan
+      ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ replan: true }) }
+      : { method: 'POST' },
+  )
+  if (!response.ok) throw await failure(response)
+  return response.json()
+}
+
+export interface TestConfig {
+  project: string
+  apps: TestRun['apps']
+  saved_from: string
+  saved_at: string
+}
+
+export async function fetchTestConfig(key: string): Promise<TestConfig | null> {
+  const response = await fetch(`/api/cards/${key}/test/config`)
+  if (response.status === 404) return null
+  if (!response.ok) throw await failure(response)
+  return response.json()
+}
+
+export async function forgetTestConfig(key: string): Promise<void> {
+  const response = await fetch(`/api/cards/${key}/test/config`, { method: 'DELETE' })
+  if (!response.ok) throw await failure(response)
+}
+
+export async function reportTestProblem(key: string, message: string): Promise<TestRun> {
+  const response = await fetch(`/api/cards/${key}/test/problem`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message }),
+  })
   if (!response.ok) throw await failure(response)
   return response.json()
 }

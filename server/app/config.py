@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     feedback_dir: Path = Path("data/feedback")
     feedback_timeout_seconds: float = 1800
     test_runs_dir: Path = Path("data/test_runs")
+    test_configs_dir: Path = Path("data/test_configs")
     test_timeout_seconds: float = 1200
     test_ready_timeout_seconds: float = 90
     reviews_dir: Path = Path("data/reviews")
