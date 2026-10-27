@@ -127,6 +127,18 @@ test('generate, review and approve a plan for a card', async ({ page }) => {
 
   await page.goto('/cards')
   await expect(page.getByText('Implementation: available')).toBeVisible()
+  await expect(page.getByRole('img', { name: 'Plan' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Implement' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Review' })).toBeDisabled()
+})
+
+test('plan and implement can be started from the cards list', async ({ page }) => {
+  await mockBackend(page)
+  await page.goto('/cards')
+  await expect(page.getByRole('button', { name: 'Implement' })).toBeDisabled()
+  await page.getByRole('button', { name: 'Plan' }).click()
+  await expect(page).toHaveURL(/\/cards$/)
+  await expect(page.getByText('Plan: running')).toBeVisible()
 })
 
 test('approved plan can be implemented on a new branch with a review report', async ({ page }) => {

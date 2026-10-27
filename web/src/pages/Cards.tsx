@@ -8,12 +8,16 @@ import Chip from '@mui/material/Chip'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { useCallback, useEffect, useState } from 'react'
+import Box from '@mui/material/Box'
 import { Link as RouterLink } from 'react-router-dom'
+import StepButton, { type StepStatus } from './StepButton'
 import {
   fetchAiConfig,
   fetchCards,
   fetchImplementationStates,
   fetchPlanStates,
+  generatePlan,
+  startImplementation,
   type AiConfig,
   type Card as JiraCard,
   type ImplState,
@@ -25,6 +29,19 @@ function isEligible(config: AiConfig | null, status: string) {
   return !!config?.eligible_statuses.some((s) => s.trim().toLowerCase() === wanted)
 }
 
+function planStep(plan: PlanState | undefined, eligible: boolean): StepStatus {
+  if (plan === 'approved') return 'done'
+  if (plan === 'running') return 'running'
+  if (plan === 'ready') return 'blocked'
+  return eligible ? 'next' : 'blocked'
+}
+
+function implementStep(plan: PlanState | undefined, impl: ImplState | undefined, canRun: boolean): StepStatus {
+  if (impl === 'completed') return 'done'
+  if (impl === 'running') return 'running'
+  return plan === 'approved' && canRun ? 'next' : 'blocked'
+}
+
 export default function Cards() {
   const [cards, setCards] = useState<JiraCard[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -32,6 +49,18 @@ export default function Cards() {
   const [plans, setPlans] = useState<Record<string, PlanState>>({})
   const [impls, setImpls] = useState<Record<string, ImplState>>({})
   const [config, setConfig] = useState<AiConfig | null>(null)
+
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  async function run(fn: () => Promise<unknown>, onDone: () => void) {
+    setActionError(null)
+    try {
+      await fn()
+      onDone()
+    } catch (e) {
+      setActionError((e as Error).message)
+    }
+  }
 
   const sync = useCallback(async () => {
     setLoading(true)
@@ -81,9 +110,36 @@ export default function Cards() {
           {error}
         </Alert>
       )}
+      {actionError && <Alert severity="error">{actionError}</Alert>}
       {cards?.length === 0 && <Alert severity="info" role="note">No cards assigned to you.</Alert>}
       {cards?.map((card) => (
-        <Card key={card.key} variant="outlined">
+        <Card key={card.key} variant="outlined" sx={{ position: 'relative' }}>
+          <Box sx={{ position: 'absolute', top: 8, right: 8, zIndex: 1, display: 'flex' }}>
+            <StepButton
+              label="Plan"
+              status={planStep(
+                plans[card.key],
+                isEligible(config, card.status) && !!config?.project_repos[card.project],
+              )}
+              onRun={() =>
+                run(
+                  () => generatePlan(card.key),
+                  () => setPlans((p) => ({ ...p, [card.key]: 'running' })),
+                )
+              }
+            />
+            <StepButton
+              label="Implement"
+              status={implementStep(plans[card.key], impls[card.key], !!config?.project_repos[card.project])}
+              onRun={() =>
+                run(
+                  () => startImplementation(card.key),
+                  () => setImpls((i) => ({ ...i, [card.key]: 'running' })),
+                )
+              }
+            />
+            <StepButton label="Review" status="blocked" />
+          </Box>
           <CardActionArea component={RouterLink} to={`/cards/${card.key}`}>
             <CardContent>
             <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>

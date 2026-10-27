@@ -44,7 +44,6 @@ test('eligible cards without a plan show a Plan: available chip; others do not',
   await screen.findByRole('link', { name: /AB-1/ })
   const available = screen.getAllByText('Plan: available')
   expect(available.map((c) => c.closest('a')?.getAttribute('href'))).toEqual(['/cards/AB-1', '/cards/AB-3'])
-  expect(screen.queryByRole('button', { name: 'Plan' })).not.toBeInTheDocument()
 })
 
 test('the whole card is a single link to its detail page', async () => {
@@ -123,4 +122,72 @@ test('Sync button refetches cards', async () => {
   await userEvent.click(screen.getByRole('button', { name: 'Sync' }))
   expect(await screen.findByRole('link', { name: /AB-3/ })).toBeInTheDocument()
   expect(fetchMock.mock.calls.filter(([u]) => u === '/api/cards')).toHaveLength(2)
+})
+
+const withRepo = { ...config, project_repos: { AB: '/r' } }
+const enabled = (name: string) => screen.getByRole('button', { name })
+
+test('only the next step button is enabled and review is always disabled', async () => {
+  mockApi({
+    '/api/cards': { body: [card('AB-1')] },
+    '/api/plans': { body: {} },
+    '/api/implementations': { body: {} },
+    '/api/ai-config': { body: withRepo },
+  })
+  renderCards()
+  await screen.findByRole('link', { name: /AB-1/ })
+  expect(enabled('Plan')).toBeEnabled()
+  expect(enabled('Implement')).toBeDisabled()
+  expect(enabled('Review')).toBeDisabled()
+})
+
+test('a completed plan shows a green check and unlocks implement', async () => {
+  mockApi({
+    '/api/cards': { body: [card('AB-1')] },
+    '/api/plans': { body: { 'AB-1': 'approved' } },
+    '/api/implementations': { body: {} },
+    '/api/ai-config': { body: withRepo },
+  })
+  renderCards()
+  expect(await screen.findByRole('img', { name: 'Plan' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Plan' })).not.toBeInTheDocument()
+  expect(enabled('Implement')).toBeEnabled()
+})
+
+test('a completed implementation shows a check; review stays disabled', async () => {
+  mockApi({
+    '/api/cards': { body: [card('AB-1')] },
+    '/api/plans': { body: { 'AB-1': 'approved' } },
+    '/api/implementations': { body: { 'AB-1': 'completed' } },
+    '/api/ai-config': { body: withRepo },
+  })
+  renderCards()
+  expect(await screen.findByRole('img', { name: 'Implement' })).toBeInTheDocument()
+  expect(enabled('Review')).toBeDisabled()
+})
+
+test('clicking Plan starts the plan without opening the card', async () => {
+  const fetchMock = mockApi({
+    '/api/cards': { body: [card('AB-1')] },
+    '/api/plans': { body: {} },
+    '/api/implementations': { body: {} },
+    '/api/ai-config': { body: withRepo },
+    'POST /api/cards/AB-1/plan': { status: 202, body: { state: 'running' } },
+  })
+  renderCards()
+  await userEvent.click(await screen.findByRole('button', { name: 'Plan' }))
+  await vi.waitFor(() => expect(screen.getByText('Plan: running')).toBeInTheDocument())
+  expect(fetchMock.mock.calls.some(([, i]) => i?.method === 'POST')).toBe(true)
+})
+
+test('buttons are disabled when the project has no repo', async () => {
+  mockApi({
+    '/api/cards': { body: [card('AB-1')] },
+    '/api/plans': { body: {} },
+    '/api/implementations': { body: {} },
+    '/api/ai-config': { body: config },
+  })
+  renderCards()
+  await screen.findByRole('link', { name: /AB-1/ })
+  expect(enabled('Plan')).toBeDisabled()
 })
