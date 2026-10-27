@@ -221,6 +221,17 @@ test('review section appears only once the implementation is completed', async (
   expect(await screen.findByRole('button', { name: 'Start review' })).toBeInTheDocument()
 })
 
+test('View changes links to the changes page once an implementation exists', async () => {
+  mockApi({
+    '/api/cards/AB-1': { body: detail() },
+    '/api/cards/AB-1/plan': { body: plan({ state: 'approved' }) },
+    '/api/cards/AB-1/implementation': { body: implementation() },
+    '/api/cards/AB-1/review': NO_PLAN,
+  })
+  renderDetail()
+  expect(await screen.findByRole('link', { name: 'View changes' })).toHaveAttribute('href', '/cards/AB-1/changes')
+})
+
 test('Approve records the decision', async () => {
   mockApi({
     '/api/cards/AB-1': { body: detail() },
@@ -303,4 +314,10 @@ test('has a back link to My Cards, even when the card fails to load', async () =
   mockApi({ '/api/cards/AB-1': { status: 404, body: { detail: 'nope' } } })
   renderDetail()
   expect(await screen.findAllByRole('link', { name: 'Back to My Cards' })).toHaveLength(2)
+})
+
+test('comments are collapsed by default', async () => {
+  mockApi({ '/api/cards/AB-1': { body: detail() }, '/api/cards/AB-1/plan': NO_PLAN })
+  renderDetail()
+  expect(await screen.findByRole('button', { name: /^Comments/ })).toHaveAttribute('aria-expanded', 'false')
 })

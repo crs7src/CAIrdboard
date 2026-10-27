@@ -93,3 +93,41 @@ export const review = (over: Record<string, unknown> = {}) => ({
   updated_at: 't',
   ...over,
 })
+
+export const SAMPLE_DIFF = `diff --git a/src/a.ts b/src/a.ts
+index 111..222 100644
+--- a/src/a.ts
++++ b/src/a.ts
+@@ -1,3 +1,3 @@
+ keep
+-old line
++new line
+ tail
+diff --git a/src/new.ts b/src/new.ts
+new file mode 100644
+index 0000000..333
+--- /dev/null
++++ b/src/new.ts
+@@ -0,0 +1,2 @@
++one
++two
+diff --git a/gone.txt b/gone.txt
+deleted file mode 100644
+index 444..0000000
+--- a/gone.txt
++++ /dev/null
+@@ -1 +0,0 @@
+-bye
+`
+
+export const changes = (over: Record<string, unknown> = {}) => ({
+  branch: 'AB-1_add_dark_mode',
+  base_commit: 'abc',
+  commits: [
+    { sha: 'aaaaaaa1111', short: 'aaaaaaa', subject: 'AB-1: step 1 - add toggle' },
+    { sha: 'bbbbbbb2222', short: 'bbbbbbb', subject: 'AB-1: review fix - null check' },
+  ],
+  selected_commit: null,
+  diff: SAMPLE_DIFF,
+  ...over,
+})

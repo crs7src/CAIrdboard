@@ -142,7 +142,7 @@ export default function CardDetail() {
           History: {card.status_history.map((h) => `${h.from_status} → ${h.to_status}`).join(', ')}
         </Typography>
       )}
-      <Accordion defaultExpanded disableGutters>
+      <Accordion disableGutters>
         <AccordionSummary component="div" expandIcon={<ExpandMoreIcon />}>
           <Typography>Comments ({card.comments.length})</Typography>
         </AccordionSummary>
@@ -164,6 +164,13 @@ export default function CardDetail() {
         </AccordionDetails>
       </Accordion>
 
+      {plan?.state === 'approved' && card.repo_configured && implState && implState !== 'running' && (
+        <Box>
+          <Button component={RouterLink} to={`/cards/${key}/changes`}>
+            View changes
+          </Button>
+        </Box>
+      )}
       {error && <Alert severity="error">{error}</Alert>}
       {!card.eligible && (
         <Alert severity="info" role="note">

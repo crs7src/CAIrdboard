@@ -3,7 +3,7 @@ import Button from '@mui/material/Button'
 import Container from '@mui/material/Container'
 import Toolbar from '@mui/material/Toolbar'
 import Typography from '@mui/material/Typography'
-import { Link, Outlet } from 'react-router-dom'
+import { Link, Outlet, useLocation } from 'react-router-dom'
 
 const links = [
   { to: '/', label: 'Home' },
@@ -12,6 +12,8 @@ const links = [
 ]
 
 export default function Layout() {
+  // The changes page needs the whole screen so diff lines are not cramped.
+  const wide = /\/changes$/.test(useLocation().pathname)
   return (
     <>
       <AppBar position="static">
@@ -28,7 +30,7 @@ export default function Layout() {
           </nav>
         </Toolbar>
       </AppBar>
-      <Container component="main" maxWidth="md" sx={{ py: 4 }}>
+      <Container component="main" maxWidth={wide ? false : 'md'} sx={{ py: wide ? 2 : 4 }}>
         <Outlet />
       </Container>
     </>

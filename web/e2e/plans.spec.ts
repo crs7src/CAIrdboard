@@ -137,6 +137,8 @@ test('generate, review and approve a plan for a card', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'AB-1' })).toBeVisible()
   await expect(page.getByText('Do the first thing')).toBeVisible()
   await expect(page.getByText('Comments (1)')).toBeVisible()
+  await expect(page.getByText('Fix the button color')).toBeHidden()
+  await page.getByText('Comments (1)').click()
   await expect(page.getByText('Fix the button color')).toBeVisible()
 
   // Plan accordion starts collapsed with a play button for the next step.
@@ -255,4 +257,50 @@ test('a completed implementation can be reviewed from the card and the list', as
   await page.getByRole('link', { name: 'Back to My Cards' }).click()
   await expect(page.getByText('Review: clean')).toBeVisible()
   await expect(page.getByRole('img', { name: 'Review', exact: true })).toBeVisible()
+})
+
+test('changes page shows the branch diff file by file', async ({ page }) => {
+  await mockBackend(page)
+  const diff = [
+    'diff --git a/src/a.ts b/src/a.ts',
+    '--- a/src/a.ts',
+    '+++ b/src/a.ts',
+    '@@ -1,2 +1,2 @@',
+    ' keep',
+    '-old line',
+    '+new line',
+    'diff --git a/src/b.ts b/src/b.ts',
+    'new file mode 100644',
+    '--- /dev/null',
+    '+++ b/src/b.ts',
+    '@@ -0,0 +1 @@',
+    '+brand new',
+    '',
+  ].join('\n')
+  const commits = [{ sha: 'aaaaaaa1', short: 'aaaaaaa', subject: 'AB-1: step 1 - add toggle' }]
+  await page.route('**/api/cards/AB-1/changes**', (route) =>
+    route.fulfill({
+      json: { branch: 'AB-1_add_dark_mode', base_commit: 'abc', commits, selected_commit: null, diff },
+    }),
+  )
+  await page.goto('/cards/AB-1')
+  await page.getByRole('button', { name: 'Run plan', exact: true }).click()
+  await page.getByRole('button', { name: 'Review plan', exact: true }).click()
+  await page.getByRole('button', { name: 'Approve', exact: true }).click()
+  await page.getByRole('button', { name: 'Start implementation', exact: true }).click()
+  await page.getByRole('link', { name: 'View changes' }).click({ timeout: 15_000 })
+
+  await expect(page).toHaveURL(/\/cards\/AB-1\/changes$/)
+  await expect(page.getByText('2 files changed,')).toBeVisible()
+  await expect(page.getByText('new line')).toBeVisible()
+  await expect(page.getByText('brand new')).toBeHidden()
+  await page.getByRole('list', { name: 'Changed files' }).getByText('src/b.ts').click()
+  await expect(page.getByText('brand new')).toBeVisible()
+  await expect(page.getByText('new line')).toBeHidden()
+  const main = await page.locator('main').boundingBox()
+  expect(main!.width).toBeGreaterThan(1200)
+  // The page itself does not scroll; only the diff pane does.
+  expect(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight)).toBe(true)
+  await page.getByRole('link', { name: 'Back to AB-1' }).click()
+  await expect(page.getByRole('heading', { name: 'AB-1', exact: true })).toBeVisible()
 })
