@@ -21,6 +21,9 @@ import {
   fetchTestStates,
   fetchConfiguredTestProjects,
   fetchTestApprovals,
+  fetchMergeRequestStates,
+  startMergeRequest,
+  type MergeRequestState,
   startTest,
   type TestState,
   generatePlan,
@@ -62,6 +65,12 @@ function testStep(
   return review === 'clean' && configured ? 'next' : 'blocked'
 }
 
+function mergeRequestStep(mr: MergeRequestState | 'outdated' | undefined, approved: boolean): StepStatus {
+  if (mr === 'created') return 'done'
+  if (mr === 'running') return 'running'
+  return approved ? 'next' : 'blocked'
+}
+
 function implementStep(plan: PlanState | undefined, impl: ImplState | undefined, canRun: boolean): StepStatus {
   if (impl === 'completed') return 'done'
   if (impl === 'running') return 'running'
@@ -77,6 +86,7 @@ export default function Home() {
   const [tests, setTests] = useState<Record<string, TestState>>({})
   const [testProjects, setTestProjects] = useState<string[]>([])
   const [approvals, setApprovals] = useState<string[]>([])
+  const [mrs, setMrs] = useState<Record<string, MergeRequestState | 'outdated'>>({})
   const [impls, setImpls] = useState<Record<string, ImplState>>({})
   const [config, setConfig] = useState<AiConfig | null>(null)
 
@@ -99,7 +109,7 @@ export default function Home() {
     try {
       setCards(await fetchCards())
       // Plan info only decorates the list, so failures here are not fatal.
-      const [p, im, rv, ts, cfg, tp, ap] = await Promise.all([
+      const [p, im, rv, ts, cfg, tp, ap, mr] = await Promise.all([
         fetchPlanStates().catch(() => ({})),
         fetchImplementationStates().catch(() => ({})),
         fetchReviewStates().catch(() => ({})),
@@ -107,6 +117,7 @@ export default function Home() {
         fetchAiConfig().catch(() => null),
         fetchConfiguredTestProjects().catch(() => []),
         fetchTestApprovals().catch(() => []),
+        fetchMergeRequestStates().catch(() => ({})),
       ])
       setPlans(p)
       setImpls(im)
@@ -115,6 +126,7 @@ export default function Home() {
       setConfig(cfg)
       setTestProjects(tp)
       setApprovals(ap)
+      setMrs(mr)
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -215,6 +227,16 @@ export default function Home() {
                 run(
                   () => startTest(card.key),
                   () => setTests((t) => ({ ...t, [card.key]: 'preparing' })),
+                )
+              }
+            />
+            <StepButton
+              label="Create MR"
+              status={mergeRequestStep(mrs[card.key], approvals.includes(card.key))}
+              onRun={() =>
+                run(
+                  () => startMergeRequest(card.key),
+                  () => setMrs((m) => ({ ...m, [card.key]: 'running' })),
                 )
               }
             />

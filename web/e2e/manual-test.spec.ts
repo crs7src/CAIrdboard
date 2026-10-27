@@ -82,6 +82,10 @@ test('start the manual test, open a link, and stop the app', async ({ page }) =>
   })
 
   let approved = false
+  await page.route('**/api/merge-requests', (route) => route.fulfill({ json: {} }))
+  await page.route('**/api/cards/AB-1/merge-request', (route) =>
+    route.fulfill({ status: 404, json: { detail: 'none' } }),
+  )
   await page.route('**/api/test-approvals', (route) => route.fulfill({ json: approved ? ['AB-1'] : [] }))
   await page.route('**/api/cards/AB-1/test/approval', (route) => {
     if (route.request().method() === 'PUT') approved = true
@@ -198,6 +202,10 @@ test('saved settings are used, and a problem report restarts with the fix', asyn
       : route.fulfill({ status: 404, json: { detail: 'No test run exists for this card' } })
   })
 
+  await page.route('**/api/merge-requests', (route) => route.fulfill({ json: {} }))
+  await page.route('**/api/cards/AB-1/merge-request', (route) =>
+    route.fulfill({ status: 404, json: { detail: 'none' } }),
+  )
   let approved = false
   await page.route('**/api/test-approvals', (route) => route.fulfill({ json: approved ? ['AB-1'] : [] }))
   await page.route('**/api/cards/AB-1/test/approval', (route) => {

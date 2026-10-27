@@ -11,6 +11,7 @@ from app import (
     gitlab,
     implementer,
     jira,
+    merge_request,
     planner,
     reviewer,
     skills,
@@ -1070,3 +1071,86 @@ async def check_gitlab_project(
         return await gitlab.fetch_project(settings, info.effective)
     except gitlab.GitLabError as e:
         raise HTTPException(502, str(e)) from e
+
+
+def _mr_repo(settings: Settings, key: str) -> str | None:
+    repo = load_ai_config(settings.ai_config_file).repo_for(key.split("-")[0])
+    return repo if repo and Path(repo).is_dir() else None
+
+
+@app.get("/api/merge-requests")
+async def merge_request_states(
+    settings: SettingsDep, runner: RunnerDep
+) -> dict[str, str]:
+    """Latest merge request state per card; `outdated` means the branch moved on since."""
+    store = merge_request.MergeRequestStore(_db(settings))
+    states: dict[str, str] = {}
+    for key in store.card_keys():
+        run = merge_request.recover_stale(store, store.latest(key))
+        if run is None:
+            continue
+        await merge_request.mark_outdated(runner, _mr_repo(settings, key), run)
+        states[key] = "outdated" if run.outdated else run.state
+    return states
+
+
+@app.get("/api/cards/{key}/merge-request")
+async def get_merge_request(
+    key: str, settings: SettingsDep, runner: RunnerDep
+) -> merge_request.MergeRequest:
+    key = _valid_key(key)
+    store = merge_request.MergeRequestStore(_db(settings))
+    run = merge_request.recover_stale(store, store.latest(key))
+    if run is None:
+        raise HTTPException(404, "No merge request exists for this card")
+    await merge_request.mark_outdated(runner, _mr_repo(settings, key), run)
+    return run
+
+
+@app.post("/api/cards/{key}/merge-request", status_code=202)
+async def create_merge_request(
+    key: str,
+    settings: SettingsDep,
+    runner: RunnerDep,
+    background: BackgroundTasks,
+) -> merge_request.MergeRequest:
+    """Push the approved branch to origin and open its merge request (or update it)."""
+    key = _valid_key(key)
+    impl = implementer.ImplementationStore(_db(settings)).latest(key)
+    if impl is None or impl.state != "completed" or not impl.branch:
+        raise HTTPException(409, "The card has no completed implementation")
+    if Approvals(_db(settings)).get(key) is None:
+        raise HTTPException(
+            409, "Approve the manual test before creating a merge request"
+        )
+    if not settings.gitlab_configured:
+        raise HTTPException(
+            503, "GitLab is not configured. Add your credentials in Settings."
+        )
+    repo = _repo_for_key(settings, key)
+    project = key.split("-")[0]
+    info = await _gitlab_info(settings, project, repo)
+    if info.effective is None:
+        raise HTTPException(
+            409, "No GitLab project is known for this repo. Set one in Settings."
+        )
+    card = await _load_card(settings, key)
+
+    store = merge_request.MergeRequestStore(_db(settings))
+    previous = merge_request.recover_stale(store, store.latest(key))
+    if (
+        key in merge_request.ACTIVE
+        or key in implementer.ACTIVE
+        or key in reviewer.ACTIVE
+        or key in feedback.ACTIVE
+        or key in tester.ACTIVE
+        or (previous and previous.state == "running")
+    ):
+        raise HTTPException(409, "This card is already being worked on")
+
+    run = store.create(key, impl, info.effective)
+    merge_request.ACTIVE.add(key)
+    background.add_task(
+        merge_request.run_merge_request, store, run, impl, card, repo, settings, runner
+    )
+    return run

@@ -373,3 +373,42 @@ test('an approved test shows a check and Test: approved', async () => {
   expect(screen.getByRole('img', { name: 'Test' })).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: 'Test' })).not.toBeInTheDocument()
 })
+
+const mrHome = (mrs: Record<string, string>, approvals: string[]) => ({
+  '/api/cards': { body: [card('AB-1')] },
+  '/api/plans': { body: { 'AB-1': 'approved' } },
+  '/api/implementations': { body: { 'AB-1': 'completed' } },
+  '/api/reviews': { body: { 'AB-1': 'clean' } },
+  '/api/tests': { body: { 'AB-1': 'stopped' } },
+  '/api/ai-config': { body: withRepo },
+  '/api/test-configs': { body: ['AB'] },
+  '/api/test-approvals': { body: approvals },
+  '/api/merge-requests': { body: mrs },
+})
+
+test('Create MR is blocked until the test is approved', async () => {
+  mockApi(mrHome({}, []))
+  renderHome()
+  expect(await screen.findByRole('button', { name: 'Create MR' })).toBeDisabled()
+})
+
+test('Create MR starts the merge request once approved', async () => {
+  const fetchMock = mockApi({
+    ...mrHome({}, ['AB-1']),
+    'POST /api/cards/AB-1/merge-request': { status: 202, body: { state: 'running' } },
+  })
+  renderHome()
+  await userEvent.click(await screen.findByRole('button', { name: 'Create MR' }))
+  expect(fetchMock).toHaveBeenCalledWith('/api/cards/AB-1/merge-request', { method: 'POST' })
+  expect(await screen.findByRole('button', { name: 'Create MR' })).toBeDisabled()
+})
+
+test('a created merge request shows a check; one with new commits can be pushed again', async () => {
+  mockApi(mrHome({ 'AB-1': 'created' }, ['AB-1']))
+  renderHome()
+  expect(await screen.findByRole('img', { name: 'Create MR' })).toBeInTheDocument()
+  vi.unstubAllGlobals()
+  mockApi(mrHome({ 'AB-1': 'outdated' }, ['AB-1']))
+  renderHome()
+  expect((await screen.findAllByRole('button', { name: 'Create MR' }))[0]).toBeEnabled()
+})

@@ -572,3 +572,39 @@ export async function checkGitLabProject(project: string): Promise<GitLabProject
   if (!response.ok) throw await failure(response)
   return response.json()
 }
+
+export type MergeRequestState = 'running' | 'created' | 'failed'
+
+export interface MergeRequest {
+  card_key: string
+  version: number
+  state: MergeRequestState
+  branch: string
+  target_branch: string
+  title: string
+  gitlab_project: string
+  mr_iid: number | null
+  mr_url: string | null
+  updated_existing: boolean
+  outdated: boolean
+  error: string | null
+}
+
+export async function fetchMergeRequest(key: string): Promise<MergeRequest | null> {
+  const response = await fetch(`/api/cards/${key}/merge-request`)
+  if (response.status === 404) return null
+  if (!response.ok) throw await failure(response)
+  return response.json()
+}
+
+export async function startMergeRequest(key: string): Promise<MergeRequest> {
+  const response = await fetch(`/api/cards/${key}/merge-request`, { method: 'POST' })
+  if (!response.ok) throw await failure(response)
+  return response.json()
+}
+
+export async function fetchMergeRequestStates(): Promise<Record<string, MergeRequestState | 'outdated'>> {
+  const response = await fetch('/api/merge-requests')
+  if (!response.ok) throw await failure(response)
+  return response.json()
+}

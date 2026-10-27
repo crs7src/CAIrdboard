@@ -31,19 +31,39 @@ def _client(settings: Settings) -> httpx.AsyncClient:
     )
 
 
-async def _get(settings: Settings, path: str) -> dict:
+def _detail(response: httpx.Response) -> str:
+    """GitLab's own explanation of a failure, if it gave one."""
+    try:
+        body = response.json()
+    except ValueError:
+        return ""
+    message = (
+        body.get("message") or body.get("error") if isinstance(body, dict) else None
+    )
+    if isinstance(message, list):
+        message = "; ".join(map(str, message))
+    elif isinstance(message, dict):
+        message = "; ".join(f"{k}: {v}" for k, v in message.items())
+    return f": {message}"[:400] if message else ""
+
+
+async def _request(settings: Settings, method: str, path: str, **kwargs):
     try:
         async with _client(settings) as client:
-            response = await client.get(path)
+            response = await client.request(method, path, **kwargs)
             response.raise_for_status()
     except httpx.HTTPStatusError as e:
         code = e.response.status_code
-        if code == 404:
+        if code == 404 and method == "GET":
             raise GitLabError("Project not found, or the token cannot see it") from e
-        raise GitLabError(f"GitLab returned {code}") from e
+        raise GitLabError(f"GitLab returned {code}{_detail(e.response)}") from e
     except httpx.HTTPError as e:
         raise GitLabError("Could not reach GitLab") from e
     return response.json()
+
+
+async def _get(settings: Settings, path: str, **kwargs):
+    return await _request(settings, "GET", path, **kwargs)
 
 
 async def fetch_current_user(settings: Settings) -> str:
@@ -52,13 +72,58 @@ async def fetch_current_user(settings: Settings) -> str:
 
 
 async def fetch_project(settings: Settings, path: str) -> GitLabProject:
-    data = await _get(settings, f"/projects/{quote(path, safe='')}")
+    data = await _get(settings, _project_url(path))
     return GitLabProject(
         id=data["id"],
         path=data["path_with_namespace"],
         web_url=data["web_url"],
         default_branch=data.get("default_branch"),
     )
+
+
+class MergeRequestInfo(BaseModel):
+    iid: int
+    web_url: str
+
+
+def _project_url(path: str) -> str:
+    return f"/projects/{quote(path, safe='')}"
+
+
+async def find_open_merge_request(
+    settings: Settings, path: str, source_branch: str
+) -> MergeRequestInfo | None:
+    found = await _get(
+        settings,
+        f"{_project_url(path)}/merge_requests",
+        params={"source_branch": source_branch, "state": "opened"},
+    )
+    if not found:
+        return None
+    return MergeRequestInfo(iid=found[0]["iid"], web_url=found[0]["web_url"])
+
+
+async def create_merge_request(
+    settings: Settings,
+    path: str,
+    source_branch: str,
+    target_branch: str,
+    title: str,
+    description: str,
+) -> MergeRequestInfo:
+    data = await _request(
+        settings,
+        "POST",
+        f"{_project_url(path)}/merge_requests",
+        json={
+            "source_branch": source_branch,
+            "target_branch": target_branch,
+            "title": title,
+            "description": description,
+            "remove_source_branch": True,
+        },
+    )
+    return MergeRequestInfo(iid=data["iid"], web_url=data["web_url"])
 
 
 def parse_remote(url: str) -> tuple[str, str] | None:

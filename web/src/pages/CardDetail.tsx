@@ -21,6 +21,7 @@ import Markdown from 'react-markdown'
 import { Link as RouterLink, useParams, useSearchParams } from 'react-router-dom'
 import Implementation from './Implementation'
 import Review from './Review'
+import MergeRequest from './MergeRequest'
 import Test from './Test'
 import {
   decidePlan,
@@ -45,6 +46,7 @@ export default function CardDetail() {
   const [focusApprove, setFocusApprove] = useState(false)
   const [implState, setImplState] = useState<string | null>(null)
   const [reviewState, setReviewState] = useState<string | undefined>()
+  const [testApproved, setTestApproved] = useState(false)
   const approveRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
@@ -318,7 +320,8 @@ export default function CardDetail() {
       {plan?.state === 'approved' && card.repo_configured && implState === 'completed' && (
         <>
           <Review cardKey={key} onStateChange={setReviewState} />
-          {reviewState === 'clean' && <Test cardKey={key} />}
+          {reviewState === 'clean' && <Test cardKey={key} onApprovalChange={setTestApproved} />}
+          <MergeRequest cardKey={key} approved={testApproved && reviewState === 'clean'} />
         </>
       )}
     </Stack>

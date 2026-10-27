@@ -42,7 +42,13 @@ const STATE_LABEL = {
   failed: 'failed',
 }
 
-export default function Test({ cardKey }: { cardKey: string }) {
+export default function Test({
+  cardKey,
+  onApprovalChange,
+}: {
+  cardKey: string
+  onApprovalChange?: (approved: boolean) => void
+}) {
   const [run, setRun] = useState<TestRun | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -63,6 +69,10 @@ export default function Test({ cardKey }: { cardKey: string }) {
       },
     )
   }, [cardKey])
+
+  useEffect(() => {
+    onApprovalChange?.(approved)
+  }, [approved, onApprovalChange])
 
   const preparing = run?.state === 'preparing'
 
