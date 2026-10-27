@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app import implementer, planner, reviewer, skills
+from app import feedback, implementer, planner, reviewer, skills
 from app.main import app
 
 PLANNER_OK = "intro\n## Mode: default\nA\n## Mode: reopened\nB\n"
@@ -15,7 +15,12 @@ def client():
 
 def test_defaults_are_used_when_nothing_is_customised(client):
     data = client.get("/api/skills").json()
-    assert [s["step"] for s in data] == ["planner", "implementer", "reviewer"]
+    assert [s["step"] for s in data] == [
+        "planner",
+        "implementer",
+        "reviewer",
+        "feedback",
+    ]
     for s in data:
         assert s["customized"] is False
         assert s["content"] == s["default_content"] != ""
@@ -27,10 +32,12 @@ def test_override_replaces_the_default_in_each_loader(client):
         "/api/skills/implementer", json={"content": "---\nname: x\n---\nMY IMPL"}
     )
     client.put("/api/skills/reviewer", json={"content": "MY REVIEW"})
+    client.put("/api/skills/feedback", json={"content": "MY FEEDBACK"})
     assert "A" in planner.load_skill(False) and "intro" in planner.load_skill(False)
     assert planner.load_skill(True).endswith("B")
     assert implementer.load_skill() == "MY IMPL"
     assert reviewer.load_skill() == "MY REVIEW"
+    assert feedback.load_skill() == "MY FEEDBACK"
     assert all(s["customized"] for s in client.get("/api/skills").json())
 
 
@@ -61,10 +68,22 @@ def test_prompts_always_start_with_the_agents_instructions(client):
     client.put("/api/skills/reviewer", json={"content": "MY REVIEW"})
     client.put("/api/skills/implementer", json={"content": "MY IMPL"})
     client.put("/api/skills/planner", json={"content": PLANNER_OK})
+    client.put("/api/skills/feedback", json={"content": "MY FEEDBACK"})
     from test_plans import _card
 
     card = _card()
+    impl = implementer.Implementation(
+        card_key="AB-1",
+        version=1,
+        plan_version=1,
+        state="completed",
+        branch="b",
+        base_commit="abc",
+        created_at="t",
+        updated_at="t",
+    )
     prompts = [
+        feedback.build_prompt(card, "plan", impl, []),
         planner.build_prompt(card, None, None),
         implementer.build_prompt(card, "plan", "br", "abc"),
         reviewer.build_prompt(

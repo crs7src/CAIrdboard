@@ -18,6 +18,10 @@ const TITLES: Record<Skill['step'], { title: string; help: string }> = {
   },
   implementer: { title: 'Implementation', help: 'Instructions for the AI that writes the code.' },
   reviewer: { title: 'Code review', help: 'Instructions for the AI that reviews the branch.' },
+  feedback: {
+    title: 'Review feedback',
+    help: 'Instructions for the AI that makes the edits you ask for on the Changes page.',
+  },
 }
 
 function SkillEditor({ initial }: { initial: Skill }) {

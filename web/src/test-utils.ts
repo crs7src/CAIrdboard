@@ -131,3 +131,31 @@ export const changes = (over: Record<string, unknown> = {}) => ({
   diff: SAMPLE_DIFF,
   ...over,
 })
+
+export const feedbackComment = (id: string, over: Record<string, unknown> = {}) => ({
+  id,
+  text: `Comment ${id}`,
+  file: null,
+  line: null,
+  side: 'new',
+  code: null,
+  status: 'pending',
+  resolved_in: null,
+  created_at: 'now',
+  ...over,
+})
+
+export const feedbackRun = (over: Record<string, unknown> = {}) => ({
+  card_key: 'AB-1',
+  version: 1,
+  state: 'running',
+  branch: 'AB-1_add_dark_mode',
+  comments: [],
+  commits: [],
+  notes: [],
+  report: null,
+  error: null,
+  created_at: 'now',
+  updated_at: 'now',
+  ...over,
+})
