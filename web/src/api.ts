@@ -1,12 +1,3 @@
-export async function fetchHello(): Promise<string> {
-  const response = await fetch('/api/hello')
-  if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`)
-  }
-  const data: { message: string } = await response.json()
-  return data.message
-}
-
 export interface Card {
   key: string
   summary: string

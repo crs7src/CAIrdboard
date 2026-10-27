@@ -105,6 +105,17 @@ test('formats validation errors from the API', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent('Must start with http')
 })
 
+test('typing before the status loads is not overwritten', async () => {
+  let resolve!: (v: unknown) => void
+  vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise((r) => (resolve = r))))
+  render(<Settings />)
+  await userEvent.type(screen.getByLabelText('Jira email'), 'typed@x.com')
+  resolve(ok(status({ email: 'saved@x.com' })))
+  await screen.findByText('Connected to Jira as Me.')
+  expect(screen.getByLabelText('Jira email')).toHaveValue('typed@x.com')
+  expect(screen.getByLabelText('Jira site URL')).toHaveValue('https://a.atlassian.net')
+})
+
 test('prompts for setup when not configured', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(ok(empty)))
   render(<Settings />)

@@ -10,7 +10,7 @@ A local web app that shows the JIRA cards assigned to the user and drives a thre
 
 ## Architecture
 
-- **Frontend**: React + React Router + TypeScript (Vite) in `web/`. API calls go through `web/src/api.ts`; the Vite dev server proxies `/api` to the backend at `127.0.0.1:8000`.
+- **Frontend**: React + React Router + TypeScript (Vite) in `web/`, styled with MUI (dark theme in `web/src/theme.ts`, shell/nav in `web/src/Layout.tsx`). API calls go through `web/src/api.ts`; the Vite dev server proxies `/api` to the backend at `127.0.0.1:8000`.
 - **Backend**: local Python server (FastAPI + uvicorn) in `server/`. It runs on the user's machine and is the only layer that talks to JIRA and spawns the local AI CLI commands (via `asyncio.create_subprocess_exec`). The browser never executes commands or holds JIRA credentials.
 - Flow: React UI → backend HTTP API → (JIRA REST API | spawned AI CLI processes). Long-running AI runs should stream/poll progress back to the UI (SSE or polling), and each stage's output (plan, implementation, review) should be persisted per card so stages can be gated on the previous one's approval.
 - Keep the stages as separate backend modules/endpoints so each AI step is independently testable with the process runner mocked.
@@ -32,10 +32,10 @@ npm run test:e2e   # Playwright; auto-starts uvicorn and Vite via webServer conf
 Single tests:
 
 ```
-cd web && npx vitest run src/pages/Hello.test.tsx
+cd web && npx vitest run src/pages/Home.test.tsx
 cd web && npx vitest run -t "test name"
 cd server && uv run pytest tests/test_x.py::test_name
-cd web && npx playwright test e2e/hello.spec.ts
+cd web && npx playwright test e2e/home.spec.ts
 cd web && npx playwright test -g "test name"
 ```
 
@@ -43,6 +43,7 @@ Test tooling (frontend tests are `src/**/*.test.tsx`, e2e specs are `web/e2e/`; 
 
 ## Conventions
 
+- **UI**: use MUI components (not raw HTML elements/custom CSS); style via the theme or `sx`. Layout props like `alignItems` go inside `sx` (not typed as direct props here). Inline status messages use `Alert`: only errors keep the default `role="alert"`; informational ones use `role="note"` so tests can target errors unambiguously.
 - **Plan before changing**: when asked to make any modification to files, first present a plan of the changes and wait for the user to accept it before proceeding.
 - **Unit tests** are required for all new functionality in both frontend and backend. "Functionality" means an input producing an expected output; pure UI styling does not need tests.
 - **E2E tests** (Playwright) are required for the major functionality points of each feature.

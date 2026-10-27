@@ -1,19 +1,17 @@
-import { Link, Route, Routes } from 'react-router-dom'
+import { Route, Routes } from 'react-router-dom'
+import Layout from './Layout'
 import Cards from './pages/Cards'
-import Hello from './pages/Hello'
+import Home from './pages/Home'
 import Settings from './pages/Settings'
 
 export default function App() {
   return (
-    <>
-      <nav>
-        <Link to="/">Home</Link> <Link to="/cards">My Cards</Link> <Link to="/settings">Settings</Link>
-      </nav>
-      <Routes>
-        <Route path="/" element={<Hello />} />
+    <Routes>
+      <Route element={<Layout />}>
+        <Route path="/" element={<Home />} />
         <Route path="/cards" element={<Cards />} />
         <Route path="/settings" element={<Settings />} />
-      </Routes>
-    </>
+      </Route>
+    </Routes>
   )
 }

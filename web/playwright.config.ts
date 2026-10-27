@@ -7,7 +7,7 @@ export default defineConfig({
     {
       command: 'uv run uvicorn app.main:app --port 8000',
       cwd: '../server',
-      url: 'http://127.0.0.1:8000/api/hello',
+      url: 'http://127.0.0.1:8000/api/jira/status',
       reuseExistingServer: !process.env.CI,
     },
     {

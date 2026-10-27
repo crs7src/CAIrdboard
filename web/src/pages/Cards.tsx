@@ -1,9 +1,18 @@
+import SyncIcon from '@mui/icons-material/Sync'
+import Alert from '@mui/material/Alert'
+import Button from '@mui/material/Button'
+import Card from '@mui/material/Card'
+import CardContent from '@mui/material/CardContent'
+import Chip from '@mui/material/Chip'
+import Link from '@mui/material/Link'
+import Stack from '@mui/material/Stack'
+import Typography from '@mui/material/Typography'
 import { useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { fetchCards, type Card } from '../api'
+import { Link as RouterLink } from 'react-router-dom'
+import { fetchCards, type Card as JiraCard } from '../api'
 
 export default function Cards() {
-  const [cards, setCards] = useState<Card[] | null>(null)
+  const [cards, setCards] = useState<JiraCard[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -25,29 +34,42 @@ export default function Cards() {
   }, [sync])
 
   return (
-    <main>
-      <h1>My Cards</h1>
-      <button onClick={sync} disabled={loading}>
-        {loading ? 'Syncing...' : 'Sync'}
-      </button>
-      {error && <p role="alert">{error}</p>}
+    <Stack spacing={2}>
+      <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center" }}>
+        <Typography variant="h4" component="h1">
+          My Cards
+        </Typography>
+        <Button variant="contained" startIcon={<SyncIcon />} onClick={sync} disabled={loading}>
+          {loading ? 'Syncing...' : 'Sync'}
+        </Button>
+      </Stack>
       {error && (
-        <p>
-          <Link to="/settings">Update your Jira settings</Link>
-        </p>
+        <Alert
+          severity="error"
+          action={
+            <Button color="inherit" size="small" component={RouterLink} to="/settings">
+              Update your Jira settings
+            </Button>
+          }
+        >
+          {error}
+        </Alert>
       )}
-      {cards?.length === 0 && <p>No cards assigned to you.</p>}
-      <ul>
-        {cards?.map((card) => (
-          <li key={card.key}>
-            <a href={card.url} target="_blank" rel="noreferrer">
-              {card.key}
-            </a>{' '}
-            {card.summary} — {card.status}
-            {card.priority && ` (${card.priority})`}
-          </li>
-        ))}
-      </ul>
-    </main>
+      {cards?.length === 0 && <Alert severity="info" role="note">No cards assigned to you.</Alert>}
+      {cards?.map((card) => (
+        <Card key={card.key} variant="outlined">
+          <CardContent>
+            <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
+              <Link href={card.url} target="_blank" rel="noreferrer" sx={{ fontWeight: "bold" }}>
+                {card.key}
+              </Link>
+              <Chip label={card.status} size="small" />
+              {card.priority && <Chip label={card.priority} size="small" color="warning" />}
+            </Stack>
+            <Typography sx={{ mt: 1 }}>{card.summary}</Typography>
+          </CardContent>
+        </Card>
+      ))}
+    </Stack>
   )
 }

@@ -29,7 +29,8 @@ test('lists cards returned by the API', async () => {
     'https://x.atlassian.net/browse/AB-1',
   )
   expect(screen.getByText(/Summary AB-2/)).toBeInTheDocument()
-  expect(screen.getByText(/\(High\)/)).toBeInTheDocument()
+  expect(screen.getAllByText('High')).toHaveLength(1)
+  expect(screen.getAllByText('To Do')).toHaveLength(2)
 })
 
 test('shows an empty state', async () => {

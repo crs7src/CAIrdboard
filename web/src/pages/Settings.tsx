@@ -1,3 +1,9 @@
+import Alert from '@mui/material/Alert'
+import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
+import Stack from '@mui/material/Stack'
+import TextField from '@mui/material/TextField'
+import Typography from '@mui/material/Typography'
 import { useEffect, useState, type FormEvent } from 'react'
 import {
   fetchJiraStatus,
@@ -22,7 +28,12 @@ export default function Settings() {
   }
 
   useEffect(() => {
-    fetchJiraStatus().then(applyStatus, (e: Error) => setError(e.message))
+    fetchJiraStatus().then((s) => {
+      setStatus(s)
+      // Don't clobber anything the user typed while the request was in flight.
+      setBaseUrl((v) => v || s.base_url)
+      setEmail((v) => v || s.email)
+    }, (e: Error) => setError(e.message))
   }, [])
 
   // Only send fields the user actually changed; the backend keeps the rest.
@@ -52,43 +63,45 @@ export default function Settings() {
   }
 
   return (
-    <main>
-      <h1>Settings</h1>
-      {status?.connected && <p>Connected to Jira as {status.user}.</p>}
+    <Box component="form" onSubmit={onSubmit} sx={{ maxWidth: 560 }}>
+      <Stack spacing={2}>
+      <Typography variant="h4" component="h1">
+        Settings
+      </Typography>
+      {status?.connected && <Alert severity="success" role="note">Connected to Jira as {status.user}.</Alert>}
       {status?.configured && !status.connected && (
-        <p>The saved credentials are not working. Please update them.</p>
+        <Alert severity="warning" role="note">The saved credentials are not working. Please update them.</Alert>
       )}
-      {status && !status.configured && <p>Enter your Jira site, email and API token.</p>}
-      <form onSubmit={onSubmit}>
-        <label>
-          Jira site URL
-          <input
-            type="url"
-            placeholder="https://your-site.atlassian.net"
-            value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
-          />
-        </label>
-        <label>
-          Jira email
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-        </label>
-        <label>
-          Jira API token
-          <input
-            type="password"
-            autoComplete="off"
-            placeholder={status?.configured ? 'Leave blank to keep current token' : ''}
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-          />
-        </label>
-        <button type="submit" disabled={saving || !hasChanges}>
-          Save
-        </button>
-      </form>
-      {saved && <p role="status">{saved}</p>}
-      {error && <p role="alert">{error}</p>}
-    </main>
+      {status && !status.configured && (
+        <Alert severity="info" role="note">Enter your Jira site, email and API token.</Alert>
+      )}
+      <TextField
+        label="Jira site URL"
+        type="url"
+        placeholder="https://your-site.atlassian.net"
+        value={baseUrl}
+        onChange={(e) => setBaseUrl(e.target.value)}
+      />
+      <TextField
+        label="Jira email"
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+      />
+      <TextField
+        label="Jira API token"
+        type="password"
+        autoComplete="off"
+        placeholder={status?.configured ? 'Leave blank to keep current token' : ''}
+        value={token}
+        onChange={(e) => setToken(e.target.value)}
+      />
+      <Button type="submit" variant="contained" disabled={saving || !hasChanges}>
+        Save
+      </Button>
+      {saved && <Alert severity="success" role="status">{saved}</Alert>}
+      {error && <Alert severity="error">{error}</Alert>}
+      </Stack>
+    </Box>
   )
 }

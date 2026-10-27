@@ -26,5 +26,5 @@ test('cards page shows an error when Jira is not configured', async ({ page }) =
     route.fulfill({ status: 503, json: { detail: 'Jira is not configured' } }),
   )
   await page.goto('/cards')
-  await expect(page.getByRole('alert')).toHaveText('Jira is not configured')
+  await expect(page.getByRole('alert')).toContainText('Jira is not configured')
 })

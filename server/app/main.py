@@ -11,11 +11,6 @@ app = FastAPI(title="AI Card Board")
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 
-@app.get("/api/hello")
-def hello() -> dict[str, str]:
-    return {"message": "Hello, world!"}
-
-
 class CredentialsUpdate(BaseModel):
     base_url: str | None = None
     email: str | None = None
