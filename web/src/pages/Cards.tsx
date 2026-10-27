@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { fetchCards, type Card } from '../api'
 
 export default function Cards() {
@@ -30,6 +31,11 @@ export default function Cards() {
         {loading ? 'Syncing...' : 'Sync'}
       </button>
       {error && <p role="alert">{error}</p>}
+      {error && (
+        <p>
+          <Link to="/settings">Update your Jira settings</Link>
+        </p>
+      )}
       {cards?.length === 0 && <p>No cards assigned to you.</p>}
       <ul>
         {cards?.map((card) => (

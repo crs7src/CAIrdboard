@@ -109,6 +109,8 @@ def test_cards_unreachable_returns_502(client):
 def test_status_not_configured(client):
     use(UNCONFIGURED)
     assert client.get("/api/jira/status").json() == {
+        "base_url": "",
+        "email": "",
         "configured": False,
         "connected": False,
         "user": None,
@@ -120,6 +122,8 @@ def test_status_connected(client):
     use(CONFIGURED)
     respx.get(f"{BASE}/rest/api/3/myself").respond(json={"displayName": "Me"})
     assert client.get("/api/jira/status").json() == {
+        "base_url": BASE,
+        "email": "me@example.com",
         "configured": True,
         "connected": True,
         "user": "Me",
@@ -131,6 +135,8 @@ def test_status_bad_credentials(client):
     use(CONFIGURED)
     respx.get(f"{BASE}/rest/api/3/myself").respond(401)
     assert client.get("/api/jira/status").json() == {
+        "base_url": BASE,
+        "email": "me@example.com",
         "configured": True,
         "connected": False,
         "user": None,

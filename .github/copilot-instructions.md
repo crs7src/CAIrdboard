@@ -14,7 +14,7 @@ A local web app that shows the JIRA cards assigned to the user and drives a thre
 - **Backend**: local Python server (FastAPI + uvicorn) in `server/`. It runs on the user's machine and is the only layer that talks to JIRA and spawns the local AI CLI commands (via `asyncio.create_subprocess_exec`). The browser never executes commands or holds JIRA credentials.
 - Flow: React UI → backend HTTP API → (JIRA REST API | spawned AI CLI processes). Long-running AI runs should stream/poll progress back to the UI (SSE or polling), and each stage's output (plan, implementation, review) should be persisted per card so stages can be gated on the previous one's approval.
 - Keep the stages as separate backend modules/endpoints so each AI step is independently testable with the process runner mocked.
-- **Jira** (Cloud, basic auth with email + API token): `server/app/jira.py` is the client; cards are fetched live from `/rest/api/3/search/jql` (`assignee = currentUser()`) on every `/api/cards` request, with no local storage. Config comes from `server/.env` (gitignored; copy `server/.env.example`) via `app/config.py`, read only by the backend. Unconfigured → 503, Jira failure → 502 (the UI shows the `detail`).
+- **Jira** (Cloud, basic auth with email + API token): `server/app/jira.py` is the client; cards are fetched live from `/rest/api/3/search/jql` (`assignee = currentUser()`) on every `/api/cards` request, with no local storage. Config comes from `server/.env` (gitignored; copy `server/.env.example`) via `app/config.py`, read only by the backend. Site URL, email and token can all be set from the UI (`/settings` → `PUT /api/jira/credentials`, partial updates allowed, verified against Jira's `/myself` before saving). There is a single credential set (no user accounts), stored at `server/data/jira.json` (gitignored, mode 0600); saved values override `.env` per field and `get_settings()` re-reads them per request. The token is never returned by any endpoint. Unconfigured → 503, Jira failure → 502 (the UI shows the `detail`).
 - Frontend and backend are separate toolchains. Generate TypeScript API types from FastAPI's OpenAPI spec (`openapi-typescript`) rather than hand-maintaining them.
 
 ## Commands
@@ -39,7 +39,7 @@ cd web && npx playwright test e2e/hello.spec.ts
 cd web && npx playwright test -g "test name"
 ```
 
-Test tooling (frontend tests are `src/**/*.test.tsx`, e2e specs are `web/e2e/`; backend tests are `server/tests/`): Vitest + React Testing Library (`jsdom`) for the frontend, pytest (+ `respx` for mocking Jira, FastAPI `TestClient`; override settings with `app.dependency_overrides[get_settings]`) for the backend, Playwright for e2e.
+Test tooling (frontend tests are `src/**/*.test.tsx`, e2e specs are `web/e2e/`; backend tests are `server/tests/`): Vitest + React Testing Library (`jsdom`) for the frontend, pytest (+ `respx` for mocking Jira, FastAPI `TestClient`; override settings with `app.dependency_overrides[get_settings]`, or set `JIRA_CREDENTIALS_FILE` to a tmp path via env when exercising the real file logic) for the backend, Playwright for e2e.
 
 ## Conventions
 
