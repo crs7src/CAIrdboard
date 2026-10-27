@@ -6,7 +6,7 @@ from dbutil import db
 
 from app import feedback, implementer, planner, reviewer, tester
 from app.config import Settings
-from app.db import Database
+from app.db import Approvals, Database
 from app.legacy_import import import_legacy_files
 
 
@@ -188,3 +188,57 @@ def test_import_with_no_legacy_folders_is_harmless(tmp_path):
         test_configs_dir=tmp_path / "x6",
     )
     assert set(import_legacy_files(settings).values()) == {0}
+
+
+def test_approval_is_withdrawn_when_the_branch_changes(tmp_path):
+    approvals = Approvals(db())
+    impl = impl_of()
+    reviews = reviewer.ReviewStore(db())
+    review = reviews.create("AB-1", impl)
+    review.state = "clean"
+    reviews.save(review)
+    tester.TestStore(db(), tmp_path).create("AB-1", impl, 1)
+
+    def approved():
+        approvals.approve("AB-1")
+        return approvals.get("AB-1") is not None
+
+    # nothing that leaves the code alone withdraws it
+    assert approved()
+    reviews.save(review)
+    tester.TestStore(db(), tmp_path).create("AB-1", impl, 1)
+    assert approvals.keys() == ["AB-1"]
+
+    review.state = "fixed"  # auto-review fix commits
+    reviews.save(review)
+    assert approvals.get("AB-1") is None
+
+    approved()
+    reviews.create("AB-1", impl)  # a new review run
+    assert approvals.get("AB-1") is None
+
+    approved()
+    implementer.ImplementationStore(db()).create("AB-1", 1)  # re-implementation
+    assert approvals.get("AB-1") is None
+
+    approved()
+    fb = feedback.FeedbackStore(db())
+    run = fb.create("AB-1", impl)  # manual review feedback starts
+    assert approvals.get("AB-1") is None
+    approved()
+    run.state = "failed"
+    fb.save(run)
+    assert approvals.get("AB-1") is not None  # a failed run changed nothing we know of
+    run.state = "done"
+    fb.save(run)
+    assert approvals.get("AB-1") is None
+
+
+def test_approvals_are_per_card():
+    approvals = Approvals(db())
+    approvals.approve("AB-1")
+    approvals.approve("AB-2")
+    assert approvals.clear("AB-1") and not approvals.clear("AB-1")
+    assert approvals.keys() == ["AB-2"]
+    with pytest.raises(ValueError):
+        approvals.get("../x")

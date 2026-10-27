@@ -34,6 +34,10 @@ CREATE TABLE IF NOT EXISTS test_configs (
     project TEXT PRIMARY KEY,
     data TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS test_approvals (
+    card_key TEXT PRIMARY KEY,
+    approved_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -124,6 +128,9 @@ class RunStore[M: BaseModel]:
 
     kind: ClassVar[str]
     model: type[M]
+    # A change to the card's branch withdraws the manual-test approval.
+    clears_approval_on_create: ClassVar[bool] = False
+    clears_approval_on_states: ClassVar[frozenset[str]] = frozenset()
 
     def __init__(self, db: Database):
         self.db = db
@@ -156,11 +163,15 @@ class RunStore[M: BaseModel]:
             ).fetchone()
             run = build((row[0] or 0) + 1, stamp)
             insert_run(conn, self.kind, run)
+            if self.clears_approval_on_create:
+                conn.execute("DELETE FROM test_approvals WHERE card_key = ?", (key,))
         return run
 
     def save(self, run: M) -> M:
         run.updated_at = now()  # type: ignore[attr-defined]
         put_run(self.db, self.kind, run)
+        if run.state in self.clears_approval_on_states:  # type: ignore[attr-defined]
+            Approvals(self.db).clear(run.card_key)  # type: ignore[attr-defined]
         return run
 
     def card_keys(self) -> list[str]:
@@ -194,3 +205,42 @@ def insert_run(conn: sqlite3.Connection, kind: str, run: BaseModel) -> None:
             run.updated_at,  # type: ignore[attr-defined]
         ),
     )
+
+
+class Approvals:
+    """Cards whose manual test the user has approved."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    def get(self, key: str) -> str | None:
+        with self.db.connect() as conn:
+            row = conn.execute(
+                "SELECT approved_at FROM test_approvals WHERE card_key = ?",
+                (check_key(key),),
+            ).fetchone()
+        return row[0] if row else None
+
+    def approve(self, key: str) -> str:
+        stamp = now()
+        with self.db.connect() as conn:
+            conn.execute(
+                "INSERT INTO test_approvals (card_key, approved_at) VALUES (?, ?) "
+                "ON CONFLICT(card_key) DO UPDATE SET approved_at = excluded.approved_at",
+                (check_key(key), stamp),
+            )
+        return stamp
+
+    def clear(self, key: str) -> bool:
+        with self.db.connect() as conn:
+            cur = conn.execute(
+                "DELETE FROM test_approvals WHERE card_key = ?", (check_key(key),)
+            )
+        return cur.rowcount > 0
+
+    def keys(self) -> list[str]:
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                "SELECT card_key FROM test_approvals ORDER BY card_key"
+            ).fetchall()
+        return [r[0] for r in rows]

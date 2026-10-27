@@ -20,6 +20,7 @@ import {
   fetchReviewStates,
   fetchTestStates,
   fetchConfiguredTestProjects,
+  fetchTestApprovals,
   startTest,
   type TestState,
   generatePlan,
@@ -50,8 +51,13 @@ function reviewStep(impl: ImplState | undefined, review: ReviewState | undefined
   return impl === 'completed' ? 'next' : 'blocked'
 }
 
-function testStep(review: ReviewState | undefined, test: TestState | undefined, configured: boolean): StepStatus {
-  if (test === 'running') return 'done'
+function testStep(
+  review: ReviewState | undefined,
+  test: TestState | undefined,
+  configured: boolean,
+  approved: boolean,
+): StepStatus {
+  if (approved || test === 'running') return 'done'
   if (test === 'preparing') return 'running'
   return review === 'clean' && configured ? 'next' : 'blocked'
 }
@@ -70,6 +76,7 @@ export default function Home() {
   const [reviews, setReviews] = useState<Record<string, ReviewState>>({})
   const [tests, setTests] = useState<Record<string, TestState>>({})
   const [testProjects, setTestProjects] = useState<string[]>([])
+  const [approvals, setApprovals] = useState<string[]>([])
   const [impls, setImpls] = useState<Record<string, ImplState>>({})
   const [config, setConfig] = useState<AiConfig | null>(null)
 
@@ -92,13 +99,14 @@ export default function Home() {
     try {
       setCards(await fetchCards())
       // Plan info only decorates the list, so failures here are not fatal.
-      const [p, im, rv, ts, cfg, tp] = await Promise.all([
+      const [p, im, rv, ts, cfg, tp, ap] = await Promise.all([
         fetchPlanStates().catch(() => ({})),
         fetchImplementationStates().catch(() => ({})),
         fetchReviewStates().catch(() => ({})),
         fetchTestStates().catch(() => ({})),
         fetchAiConfig().catch(() => null),
         fetchConfiguredTestProjects().catch(() => []),
+        fetchTestApprovals().catch(() => []),
       ])
       setPlans(p)
       setImpls(im)
@@ -106,6 +114,7 @@ export default function Home() {
       setTests(ts)
       setConfig(cfg)
       setTestProjects(tp)
+      setApprovals(ap)
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -201,7 +210,7 @@ export default function Home() {
             />
             <StepButton
               label="Test"
-              status={testStep(reviews[card.key], tests[card.key], testProjects.includes(card.project))}
+              status={testStep(reviews[card.key], tests[card.key], testProjects.includes(card.project), approvals.includes(card.key))}
               onRun={() =>
                 run(
                   () => startTest(card.key),
@@ -220,9 +229,9 @@ export default function Home() {
               {card.priority && <Chip label={card.priority} size="small" color="warning" />}
               {reviews[card.key] === 'clean' ? (
                 <Chip
-                  label={`Test: ${tests[card.key] ?? 'available'}`}
+                  label={`Test: ${approvals.includes(card.key) ? 'approved' : (tests[card.key] ?? 'available')}`}
                   size="small"
-                  color={tests[card.key] ? undefined : 'primary'}
+                  color={approvals.includes(card.key) ? 'success' : tests[card.key] ? undefined : 'primary'}
                   variant="outlined"
                 />
               ) : plans[card.key] === 'approved' && impls[card.key] === 'completed' ? (

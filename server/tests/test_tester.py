@@ -655,3 +655,41 @@ def test_lists_projects_that_have_settings(client, env):
     assert client.get("/api/test-configs").json() == ["AB"]
     client.delete("/api/test-configs/AB")
     assert client.get("/api/test-configs").json() == []
+
+
+@respx.mock
+def test_approving_the_manual_test_needs_a_run_and_can_be_undone(client, env):
+    tmp_path, work = env
+    mock_jira()
+    assert client.put("/api/cards/AB-1/test/approval").status_code == 409
+    assert client.get("/api/cards/AB-1/test/approval").json() == {
+        "approved": False,
+        "approved_at": None,
+    }
+    approve_plan(tmp_path)
+    impl = make_impl(tmp_path, work)
+    tester.TestStore(db(), tmp_path).create("AB-1", impl, 1)
+    body = client.put("/api/cards/AB-1/test/approval").json()
+    assert body["approved"] is True and body["approved_at"]
+    assert client.get("/api/test-approvals").json() == ["AB-1"]
+    assert client.get("/api/cards/AB-1/test/approval").json()["approved"] is True
+    assert client.delete("/api/cards/AB-1/test/approval").json()["approved"] is False
+    assert client.get("/api/test-approvals").json() == []
+    assert client.put("/api/cards/bad/test/approval").status_code == 404
+
+
+@respx.mock
+def test_a_review_that_fixes_things_withdraws_the_approval(client, env):
+    tmp_path, work = env
+    mock_jira()
+    approve_plan(tmp_path)
+    impl = make_impl(tmp_path, work)
+    tester.TestStore(db(), tmp_path).create("AB-1", impl, 1)
+    client.put("/api/cards/AB-1/test/approval")
+    reviews = reviewer.ReviewStore(db())
+    review = reviews.create("AB-1", impl)
+    assert client.get("/api/test-approvals").json() == []
+    client.put("/api/cards/AB-1/test/approval")
+    review.state = "fixed"
+    reviews.save(review)
+    assert client.get("/api/cards/AB-1/test/approval").json()["approved"] is False

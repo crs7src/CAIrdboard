@@ -81,6 +81,14 @@ test('start the manual test, open a link, and stop the app', async ({ page }) =>
     return route.fulfill({ json: run })
   })
 
+  let approved = false
+  await page.route('**/api/test-approvals', (route) => route.fulfill({ json: approved ? ['AB-1'] : [] }))
+  await page.route('**/api/cards/AB-1/test/approval', (route) => {
+    if (route.request().method() === 'PUT') approved = true
+    if (route.request().method() === 'DELETE') approved = false
+    return route.fulfill({ json: { approved, approved_at: approved ? 't' : null } })
+  })
+
   await page.goto('/')
   await expect(page.getByText('Test: available')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Test', exact: true })).toBeDisabled()
@@ -97,10 +105,25 @@ test('start the manual test, open a link, and stop the app', async ({ page }) =>
   await expect(page.getByRole('list', { name: 'Running apps' })).toContainText('api')
   await expect(page.getByRole('list', { name: 'Running apps' })).toContainText('web')
 
+  await page.getByRole('button', { name: 'Approve', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Approved', exact: true })).toBeVisible()
+  await page.getByRole('link', { name: 'Back to Home' }).click()
+  await expect(page.getByText('Test: approved')).toBeVisible()
+  await expect(page.getByRole('img', { name: 'Test' })).toBeVisible()
+
+  // a later change to the branch (auto or manual review) withdraws the approval on the server
+  approved = false
+  await page.goto('/cards/AB-1')
+  await page.getByRole('button', { name: /^Test/ }).first().click()
+  await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeVisible()
+
   await page.getByRole('button', { name: 'Stop app' }).click()
   await expect(page.getByRole('button', { name: 'Test again', exact: true })).toBeEnabled()
   await expect(link).toHaveCount(0)
   expect(methods).toContain('DELETE')
+
+  await page.getByRole('link', { name: 'Settings → Test apps' }).click()
+  await expect(page).toHaveURL(/\/settings\/test-apps/)
 })
 
 test('saved settings are used, and a problem report restarts with the fix', async ({ page }) => {
@@ -173,6 +196,14 @@ test('saved settings are used, and a problem report restarts with the fix', asyn
     return run
       ? route.fulfill({ json: run })
       : route.fulfill({ status: 404, json: { detail: 'No test run exists for this card' } })
+  })
+
+  let approved = false
+  await page.route('**/api/test-approvals', (route) => route.fulfill({ json: approved ? ['AB-1'] : [] }))
+  await page.route('**/api/cards/AB-1/test/approval', (route) => {
+    if (route.request().method() === 'PUT') approved = true
+    if (route.request().method() === 'DELETE') approved = false
+    return route.fulfill({ json: { approved, approved_at: approved ? 't' : null } })
   })
 
   await page.goto('/cards/AB-1')

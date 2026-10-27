@@ -54,6 +54,8 @@ def _now() -> str:
 class ReviewStore(RunStore[Review]):
     kind = "review"
     model = Review
+    clears_approval_on_create = True
+    clears_approval_on_states = frozenset({"fixed"})
 
     def create(self, key: str, impl: Implementation) -> Review:
         def build(version: int, stamp: str):

@@ -327,6 +327,29 @@ export async function fetchTestConfig(key: string): Promise<TestConfig | null> {
 
 export type TestApp = TestRun['apps'][number]
 
+export interface TestApproval {
+  approved: boolean
+  approved_at: string | null
+}
+
+export async function fetchTestApproval(key: string): Promise<TestApproval> {
+  const response = await fetch(`/api/cards/${key}/test/approval`)
+  if (!response.ok) throw await failure(response)
+  return response.json()
+}
+
+export async function setTestApproval(key: string, approved: boolean): Promise<TestApproval> {
+  const response = await fetch(`/api/cards/${key}/test/approval`, { method: approved ? 'PUT' : 'DELETE' })
+  if (!response.ok) throw await failure(response)
+  return response.json()
+}
+
+export async function fetchTestApprovals(): Promise<string[]> {
+  const response = await fetch('/api/test-approvals')
+  if (!response.ok) throw await failure(response)
+  return response.json()
+}
+
 export async function fetchConfiguredTestProjects(): Promise<string[]> {
   const response = await fetch('/api/test-configs')
   if (!response.ok) throw await failure(response)

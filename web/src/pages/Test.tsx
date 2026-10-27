@@ -6,6 +6,9 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import Link from '@mui/material/Link'
+import ToggleButton from '@mui/material/ToggleButton'
+import CheckIcon from '@mui/icons-material/Check'
+import { Link as RouterLink } from 'react-router-dom'
 import TextField from '@mui/material/TextField'
 import List from '@mui/material/List'
 import ListItem from '@mui/material/ListItem'
@@ -18,6 +21,8 @@ import { useEffect, useState } from 'react'
 import Markdown from 'react-markdown'
 import {
   fetchTest,
+  fetchTestApproval,
+  setTestApproval,
   fetchTestConfig,
   forgetTestConfig,
   reportTestProblem,
@@ -44,6 +49,7 @@ export default function Test({ cardKey }: { cardKey: string }) {
   const [error, setError] = useState<string | null>(null)
   const [config, setConfig] = useState<TestConfig | null>(null)
   const [problem, setProblem] = useState('')
+  const [approved, setApproved] = useState(false)
 
   useEffect(() => {
     fetchTest(cardKey).then(
@@ -59,6 +65,22 @@ export default function Test({ cardKey }: { cardKey: string }) {
   }, [cardKey])
 
   const preparing = run?.state === 'preparing'
+
+  // Approval is withdrawn by the server when the branch changes, so re-read it with the run.
+  const hasRun = !!run
+  useEffect(() => {
+    if (!hasRun) return
+    fetchTestApproval(cardKey).then((a) => setApproved(a.approved), () => setApproved(false))
+  }, [cardKey, hasRun, run?.version, run?.state])
+
+  async function toggleApproval() {
+    setError(null)
+    try {
+      setApproved((await setTestApproval(cardKey, !approved)).approved)
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
 
   // Settings are saved when a run comes up, so look again whenever the state changes.
   useEffect(() => {
@@ -115,7 +137,24 @@ export default function Test({ cardKey }: { cardKey: string }) {
             color={run?.state === 'running' ? 'success' : run?.state === 'failed' ? 'error' : 'default'}
           />
           {config && <Chip label="saved settings" size="small" variant="outlined" />}
+          {approved && <Chip label="approved" size="small" color="success" />}
           <Box sx={{ flexGrow: 1 }} />
+          {run && (
+            <span onClick={(e) => e.stopPropagation()}>
+              <ToggleButton
+                value="approved"
+                size="small"
+                selected={approved}
+                disabled={preparing}
+                aria-pressed={approved}
+                onChange={toggleApproval}
+                color="success"
+              >
+                {approved && <CheckIcon fontSize="small" sx={{ mr: 0.5 }} />}
+                {approved ? 'Approved' : 'Approve'}
+              </ToggleButton>
+            </span>
+          )}
           {!active && (
             <span onClick={(e) => e.stopPropagation()}>
               <StepButton
@@ -129,6 +168,13 @@ export default function Test({ cardKey }: { cardKey: string }) {
       </AccordionSummary>
       <AccordionDetails>
         <Stack spacing={2}>
+          <Typography variant="body2" color="text.secondary">
+            How the apps are started is set under{' '}
+            <Link component={RouterLink} to="/settings/test-apps">
+              Settings → Test apps
+            </Link>
+            . Any further change to the branch withdraws your approval.
+          </Typography>
           {preparing && (
             <Typography>
               {run?.source === 'saved'

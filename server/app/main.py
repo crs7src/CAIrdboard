@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 from app import changes, feedback, implementer, jira, planner, reviewer, skills, tester
 from app.ai_config import AiConfig, load_ai_config, save_ai_config
 from app.config import Settings, get_settings, save_credentials
-from app.db import CARD_KEY_RE, Database
+from app.db import CARD_KEY_RE, Approvals, Database
 from app.legacy_import import import_legacy_files
 
 
@@ -772,6 +772,44 @@ async def report_test_problem(
         previous=previous,
     )
     return run
+
+
+class ApprovalState(BaseModel):
+    approved: bool
+    approved_at: str | None = None
+
+
+def _approval(settings: Settings, key: str) -> ApprovalState:
+    at = Approvals(_db(settings)).get(key)
+    return ApprovalState(approved=at is not None, approved_at=at)
+
+
+@app.get("/api/test-approvals")
+def list_test_approvals(settings: SettingsDep) -> list[str]:
+    """Cards whose manual test is approved (a Home page check)."""
+    return Approvals(_db(settings)).keys()
+
+
+@app.get("/api/cards/{key}/test/approval")
+def get_test_approval(key: str, settings: SettingsDep) -> ApprovalState:
+    return _approval(settings, _valid_key(key))
+
+
+@app.put("/api/cards/{key}/test/approval")
+def approve_test(key: str, settings: SettingsDep) -> ApprovalState:
+    """Approve the card's manual test. Changing the branch later withdraws it."""
+    key = _valid_key(key)
+    if _test_store(settings).latest(key) is None:
+        raise HTTPException(409, "The card has not been manually tested yet")
+    Approvals(_db(settings)).approve(key)
+    return _approval(settings, key)
+
+
+@app.delete("/api/cards/{key}/test/approval")
+def unapprove_test(key: str, settings: SettingsDep) -> ApprovalState:
+    key = _valid_key(key)
+    Approvals(_db(settings)).clear(key)
+    return _approval(settings, key)
 
 
 @app.get("/api/test-configs")

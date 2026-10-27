@@ -74,6 +74,7 @@ def _now() -> str:
 class ImplementationStore(RunStore[Implementation]):
     kind = "implementation"
     model = Implementation
+    clears_approval_on_create = True
 
     def create(self, key: str, plan_version: int) -> Implementation:
         def build(version: int, stamp: str):

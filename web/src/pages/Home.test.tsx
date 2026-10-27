@@ -356,3 +356,20 @@ test('Test is disabled until the project has start settings', async () => {
   renderHome()
   expect(await screen.findByRole('button', { name: 'Test' })).toBeDisabled()
 })
+
+test('an approved test shows a check and Test: approved', async () => {
+  mockApi({
+    '/api/cards': { body: [card('AB-1')] },
+    '/api/plans': { body: { 'AB-1': 'approved' } },
+    '/api/implementations': { body: { 'AB-1': 'completed' } },
+    '/api/reviews': { body: { 'AB-1': 'clean' } },
+    '/api/tests': { body: { 'AB-1': 'stopped' } },
+    '/api/ai-config': { body: withRepo },
+    '/api/test-configs': { body: ['AB'] },
+    '/api/test-approvals': { body: ['AB-1'] },
+  })
+  renderHome()
+  expect(await screen.findByText('Test: approved')).toBeInTheDocument()
+  expect(screen.getByRole('img', { name: 'Test' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Test' })).not.toBeInTheDocument()
+})

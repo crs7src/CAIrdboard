@@ -93,6 +93,8 @@ class FeedbackStore(RunStore[FeedbackRun]):
 
     kind = "feedback"
     model = FeedbackRun
+    clears_approval_on_create = True
+    clears_approval_on_states = frozenset({"done"})
 
     def comments(self, key: str) -> list[FeedbackComment]:
         with self.db.connect() as conn:

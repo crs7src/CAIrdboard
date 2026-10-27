@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, test, vi } from 'vitest'
 import { mockApi, testRun } from '../test-utils'
@@ -26,7 +27,7 @@ test('is collapsed with a start button; starting shows progress', async () => {
     '/api/cards/AB-1/test/config': { body: CONFIG },
     'POST /api/cards/AB-1/test': { status: 202, body: testRun({ state: 'preparing', links: [] }) },
   })
-  render(<Test cardKey="AB-1" />)
+  render(<Test cardKey="AB-1" />, { wrapper: MemoryRouter })
   await screen.findByText('saved settings')
   const header = await screen.findByRole('button', { name: HEADER })
   expect(header).toHaveAttribute('aria-expanded', 'false')
@@ -44,7 +45,7 @@ test('polls while preparing, then shows links that open in a new tab', async () 
       { body: testRun({ report: 'Dark mode was added' }) },
     ],
   })
-  render(<Test cardKey="AB-1" />)
+  render(<Test cardKey="AB-1" />, { wrapper: MemoryRouter })
   await open()
   await screen.findByText(/Working out how to run the app/)
   await vi.advanceTimersByTimeAsync(TEST_POLL_MS + 100)
@@ -64,7 +65,7 @@ test('Stop app stops it and allows testing again', async () => {
     '/api/cards/AB-1/test/config': { body: CONFIG },
     'DELETE /api/cards/AB-1/test': { body: testRun({ state: 'stopped' }) },
   })
-  render(<Test cardKey="AB-1" />)
+  render(<Test cardKey="AB-1" />, { wrapper: MemoryRouter })
   await open()
   await userEvent.click(await screen.findByRole('button', { name: 'Stop app' }))
   expect(await screen.findByRole('button', { name: 'Test again' })).toBeEnabled()
@@ -77,7 +78,7 @@ test('a failure shows the error and can be retried', async () => {
     '/api/cards/AB-1/test': { body: testRun({ state: 'failed', links: [], error: 'port in use' }) },
     '/api/cards/AB-1/test/config': { body: CONFIG },
   })
-  render(<Test cardKey="AB-1" />)
+  render(<Test cardKey="AB-1" />, { wrapper: MemoryRouter })
   await screen.findByText('saved settings')
   await open()
   expect(await screen.findByText('port in use')).toBeInTheDocument()
@@ -90,7 +91,7 @@ test('shows saved settings, and Start with AI asks the AI', async () => {
     '/api/cards/AB-1/test/config': { body: CONFIG },
     'POST /api/cards/AB-1/test': { status: 202, body: testRun({ state: 'preparing', links: [] }) },
   })
-  render(<Test cardKey="AB-1" />)
+  render(<Test cardKey="AB-1" />, { wrapper: MemoryRouter })
   expect(await screen.findByText('saved settings')).toBeInTheDocument()
   await open()
   await userEvent.click(await screen.findByRole('button', { name: 'Start with AI' }))
@@ -104,7 +105,7 @@ test('Forget saved settings removes them', async () => {
     '/api/cards/AB-1/test/config': { body: CONFIG },
     'DELETE /api/cards/AB-1/test/config': { status: 204, body: null },
   })
-  render(<Test cardKey="AB-1" />)
+  render(<Test cardKey="AB-1" />, { wrapper: MemoryRouter })
   await open()
   await userEvent.click(await screen.findByRole('button', { name: 'Forget saved settings' }))
   await vi.waitFor(() => expect(screen.queryByText('saved settings')).not.toBeInTheDocument())
@@ -119,7 +120,7 @@ test('reporting a problem sends the message and shows the restart', async () => 
       body: testRun({ state: 'preparing', source: 'feedback', problem: 'login is blank', links: [] }),
     },
   })
-  render(<Test cardKey="AB-1" />)
+  render(<Test cardKey="AB-1" />, { wrapper: MemoryRouter })
   await open()
   const send = await screen.findByRole('button', { name: 'Send problem report' })
   expect(send).toBeDisabled()
@@ -135,7 +136,7 @@ test('a run from saved settings just says it is starting the app', async () => {
   mockApi({
     '/api/cards/AB-1/test': { body: testRun({ state: 'preparing', source: 'saved', links: [] }) },
   })
-  render(<Test cardKey="AB-1" />)
+  render(<Test cardKey="AB-1" />, { wrapper: MemoryRouter })
   await open()
   expect(await screen.findByText('Starting app...')).toBeInTheDocument()
   expect(screen.queryByText(/Working out how to run the app/)).not.toBeInTheDocument()
@@ -143,8 +144,46 @@ test('a run from saved settings just says it is starting the app', async () => {
 
 test('Start test is disabled until start settings exist, but Start with AI works', async () => {
   mockApi({ '/api/cards/AB-1/test': NONE })
-  render(<Test cardKey="AB-1" />)
+  render(<Test cardKey="AB-1" />, { wrapper: MemoryRouter })
   await open()
   expect(await screen.findByRole('button', { name: 'Start test' })).toBeDisabled()
   expect(screen.getByRole('button', { name: 'Start with AI' })).toBeEnabled()
+})
+
+test('has a link to the Test apps settings', async () => {
+  mockApi({ '/api/cards/AB-1/test': NONE })
+  render(<Test cardKey="AB-1" />, { wrapper: MemoryRouter })
+  await open()
+  expect(screen.getByRole('link', { name: 'Settings → Test apps' })).toHaveAttribute('href', '/settings/test-apps')
+})
+
+test('Approve toggles the approval, which the server may later withdraw', async () => {
+  const fetchMock = mockApi({
+    '/api/cards/AB-1/test': { body: testRun({ state: 'stopped' }) },
+    '/api/cards/AB-1/test/approval': [
+      { body: { approved: false, approved_at: null } },
+      { body: { approved: true, approved_at: 'now' } },
+      { body: { approved: false, approved_at: null } },
+    ],
+    'PUT /api/cards/AB-1/test/approval': { body: { approved: true, approved_at: 'now' } },
+    'DELETE /api/cards/AB-1/test/approval': { body: { approved: false, approved_at: null } },
+  })
+  render(<Test cardKey="AB-1" />, { wrapper: MemoryRouter })
+  const toggle = await screen.findByRole('button', { name: 'Approve' })
+  expect(toggle).toHaveAttribute('aria-pressed', 'false')
+  await userEvent.click(toggle)
+  const on = await screen.findByRole('button', { name: 'Approved' })
+  expect(on).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.getByText('approved')).toBeInTheDocument()
+  await userEvent.click(on)
+  expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument()
+  const methods = fetchMock.mock.calls.map(([, i]) => i?.method).filter((m) => m === 'PUT' || m === 'DELETE')
+  expect(methods).toEqual(['PUT', 'DELETE'])
+})
+
+test('there is nothing to approve before a test has run', async () => {
+  mockApi({ '/api/cards/AB-1/test': NONE })
+  render(<Test cardKey="AB-1" />, { wrapper: MemoryRouter })
+  await screen.findByRole('button', { name: HEADER })
+  expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument()
 })
