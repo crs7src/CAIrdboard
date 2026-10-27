@@ -11,7 +11,7 @@ A local web app that shows the JIRA cards assigned to the user and drives a thre
 
 ## Architecture
 
-- **Frontend**: React + React Router + TypeScript (Vite) in `web/`, styled with MUI (dark theme in `web/src/theme.ts`, shell/nav in `web/src/Layout.tsx`). API calls go through `web/src/api.ts`; the Vite dev server proxies `/api` to the backend at `127.0.0.1:8000`.
+- **Frontend**: React + React Router + TypeScript (Vite) in `web/`, styled with MUI (dark theme in `web/src/theme.ts`, shell/nav in `web/src/Layout.tsx`). API calls go through `web/src/api.ts`; the Vite dev server proxies `/api` to the backend at `127.0.0.1:6100`.
 - **Backend**: local Python server (FastAPI + uvicorn) in `server/`. It runs on the user's machine and is the only layer that talks to JIRA and spawns the local AI CLI commands (via `asyncio.create_subprocess_exec`). The browser never executes commands or holds JIRA credentials.
 - Flow: React UI → backend HTTP API → (JIRA REST API | spawned AI CLI processes). Long-running AI runs should stream/poll progress back to the UI (SSE or polling), and each stage's output (plan, implementation, review) should be persisted per card so stages can be gated on the previous one's approval.
 - Keep the stages as separate backend modules/endpoints so each AI step is independently testable with the process runner mocked.
@@ -23,7 +23,7 @@ A local web app that shows the JIRA cards assigned to the user and drives a thre
 Root `package.json` orchestrates both projects (setup: `npm install` in both the root and `web/`, and `cd server && uv sync`). Playwright browsers: `cd web && npx playwright install chromium`.
 
 ```
-npm run dev        # uvicorn (:8000, reload) + Vite concurrently
+npm run dev        # uvicorn (:6100, reload) + Vite (:6101) concurrently
 npm run build      # tsc -b && vite build (web/)
 npm run lint       # oxlint (web) + ruff check + ruff format --check (server)
 npm test           # vitest (web) + pytest (server)

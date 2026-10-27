@@ -5,7 +5,9 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   plugins: [react()],
   server: {
-    proxy: { '/api': 'http://127.0.0.1:8000' },
+    port: 6101,
+    strictPort: true,
+    proxy: { '/api': 'http://127.0.0.1:6100' },
   },
   test: {
     environment: 'jsdom',
