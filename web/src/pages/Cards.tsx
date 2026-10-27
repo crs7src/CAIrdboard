@@ -9,7 +9,7 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { useCallback, useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
-import { Link as RouterLink } from 'react-router-dom'
+import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import StepButton, { type StepStatus } from './StepButton'
 import {
   fetchAiConfig,
@@ -32,7 +32,7 @@ function isEligible(config: AiConfig | null, status: string) {
 function planStep(plan: PlanState | undefined, eligible: boolean): StepStatus {
   if (plan === 'approved') return 'done'
   if (plan === 'running') return 'running'
-  if (plan === 'ready') return 'blocked'
+  if (plan === 'ready') return 'next'
   return eligible ? 'next' : 'blocked'
 }
 
@@ -50,6 +50,7 @@ export default function Cards() {
   const [impls, setImpls] = useState<Record<string, ImplState>>({})
   const [config, setConfig] = useState<AiConfig | null>(null)
 
+  const navigate = useNavigate()
   const [actionError, setActionError] = useState<string | null>(null)
 
   async function run(fn: () => Promise<unknown>, onDone: () => void) {
@@ -122,7 +123,9 @@ export default function Cards() {
                 isEligible(config, card.status) && !!config?.project_repos[card.project],
               )}
               onRun={() =>
-                run(
+                plans[card.key] === 'ready'
+                  ? navigate(`/cards/${card.key}?open=plan`)
+                  : run(
                   () => generatePlan(card.key),
                   () => setPlans((p) => ({ ...p, [card.key]: 'running' })),
                 )

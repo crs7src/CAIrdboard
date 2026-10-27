@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, expect, test, vi } from 'vitest'
 import { card, mockApi } from '../test-utils'
 import Cards from './Cards'
@@ -10,6 +10,11 @@ afterEach(() => vi.unstubAllGlobals())
 const config = {
   eligible_statuses: ['To Do', 'Backlog'],
   project_repos: {},
+}
+
+function LocationProbe() {
+  const { pathname, search } = useLocation()
+  return <p>{pathname + search}</p>
 }
 
 function renderCards() {
@@ -178,6 +183,25 @@ test('clicking Plan starts the plan without opening the card', async () => {
   await userEvent.click(await screen.findByRole('button', { name: 'Plan' }))
   await vi.waitFor(() => expect(screen.getByText('Plan: running')).toBeInTheDocument())
   expect(fetchMock.mock.calls.some(([, i]) => i?.method === 'POST')).toBe(true)
+})
+
+test('Plan on a plan awaiting approval opens the card with the plan expanded', async () => {
+  mockApi({
+    '/api/cards': { body: [card('AB-1')] },
+    '/api/plans': { body: { 'AB-1': 'ready' } },
+    '/api/implementations': { body: {} },
+    '/api/ai-config': { body: withRepo },
+  })
+  render(
+    <MemoryRouter initialEntries={['/cards']}>
+      <Routes>
+        <Route path="/cards" element={<Cards />} />
+        <Route path="/cards/:key" element={<LocationProbe />} />
+      </Routes>
+    </MemoryRouter>,
+  )
+  await userEvent.click(await screen.findByRole('button', { name: 'Plan' }))
+  expect(await screen.findByText('/cards/AB-1?open=plan')).toBeInTheDocument()
 })
 
 test('buttons are disabled when the project has no repo', async () => {

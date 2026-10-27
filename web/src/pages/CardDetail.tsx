@@ -14,10 +14,11 @@ import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
-import { Link as RouterLink, useParams } from 'react-router-dom'
+import { Link as RouterLink, useParams, useSearchParams } from 'react-router-dom'
 import Implementation from './Implementation'
 import {
   decidePlan,
@@ -37,7 +38,8 @@ export default function CardDetail() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [feedback, setFeedback] = useState('')
-  const [planOpen, setPlanOpen] = useState(false)
+  const [searchParams] = useSearchParams()
+  const [planOpen, setPlanOpen] = useState(searchParams.get('open') === 'plan')
   const [focusApprove, setFocusApprove] = useState(false)
   const approveRef = useRef<HTMLButtonElement>(null)
 
@@ -80,11 +82,20 @@ export default function CardDetail() {
     }
   }, [])
 
+  const backButton = (
+    <Box>
+      <Button startIcon={<ArrowBackIcon />} component={RouterLink} to="/cards">
+        Back to My Cards
+      </Button>
+    </Box>
+  )
+
   if (!card) {
-    return error ? (
-      <Alert severity="error">{error}</Alert>
-    ) : (
-      <CircularProgress aria-label="Loading" />
+    return (
+      <Stack spacing={2}>
+        {backButton}
+        {error ? <Alert severity="error">{error}</Alert> : <CircularProgress aria-label="Loading" />}
+      </Stack>
     )
   }
 
@@ -106,6 +117,7 @@ export default function CardDetail() {
 
   return (
     <Stack spacing={2}>
+      {backButton}
       <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
         <Typography variant="h4" component="h1">
           {card.key}

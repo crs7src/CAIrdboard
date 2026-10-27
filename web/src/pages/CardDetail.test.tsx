@@ -52,6 +52,19 @@ test('plan accordion is collapsed by default', async () => {
   expect(header).toHaveAttribute('aria-expanded', 'true')
 })
 
+test('?open=plan expands the plan section', async () => {
+  mockApi({ '/api/cards/AB-1': { body: detail() }, '/api/cards/AB-1/plan': { body: plan() } })
+  render(
+    <MemoryRouter initialEntries={['/cards/AB-1?open=plan']}>
+      <Routes>
+        <Route path="/cards/:key" element={<CardDetail />} />
+      </Routes>
+    </MemoryRouter>,
+  )
+  expect(await screen.findByRole('button', { name: /^Plan/ })).toHaveAttribute('aria-expanded', 'true')
+  expect(screen.getByRole('button', { name: 'Approve' })).toBeVisible()
+})
+
 test('play on a ready plan opens the accordion and focuses Approve', async () => {
   mockApi({ '/api/cards/AB-1': { body: detail() }, '/api/cards/AB-1/plan': { body: plan() } })
   renderDetail()
@@ -263,4 +276,14 @@ test('shows an error when the card cannot be loaded', async () => {
   mockApi({ '/api/cards/AB-1': { status: 404, body: { detail: 'Card AB-1 not found' } } })
   renderDetail()
   expect(await screen.findByRole('alert')).toHaveTextContent('Card AB-1 not found')
+})
+
+test('has a back link to My Cards, even when the card fails to load', async () => {
+  mockApi({ '/api/cards/AB-1': { body: detail() }, '/api/cards/AB-1/plan': NO_PLAN })
+  renderDetail()
+  expect(await screen.findByRole('link', { name: 'Back to My Cards' })).toHaveAttribute('href', '/cards')
+  vi.unstubAllGlobals()
+  mockApi({ '/api/cards/AB-1': { status: 404, body: { detail: 'nope' } } })
+  renderDetail()
+  expect(await screen.findAllByRole('link', { name: 'Back to My Cards' })).toHaveLength(2)
 })

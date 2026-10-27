@@ -189,3 +189,22 @@ test('cards in testing status cannot get a plan', async ({ page }) => {
   await expect(page.getByText(/not generated for cards in "Testing"/)).toBeVisible()
   await expect(page.getByRole('button', { name: /Generate plan|Run plan/ })).toHaveCount(0)
 })
+
+test('back button returns to My Cards', async ({ page }) => {
+  await mockBackend(page)
+  await page.goto('/cards/AB-1')
+  await page.getByRole('link', { name: 'Back to My Cards' }).click()
+  await expect(page).toHaveURL(/\/cards$/)
+  await expect(page.getByRole('heading', { name: 'My Cards' })).toBeVisible()
+})
+
+test('Plan button on My Cards opens a ready plan expanded', async ({ page }) => {
+  await mockBackend(page)
+  await page.goto('/cards/AB-1')
+  await page.getByRole('button', { name: 'Run plan', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Review plan', exact: true })).toBeVisible({ timeout: 10_000 })
+  await page.getByRole('link', { name: 'Back to My Cards' }).click()
+  await page.getByRole('button', { name: 'Plan', exact: true }).click()
+  await expect(page).toHaveURL(/open=plan/)
+  await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeVisible()
+})
