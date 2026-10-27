@@ -1,0 +1,22 @@
+[project]
+name = "card-board-server"
+version = "0.1.0"
+requires-python = ">=3.15"
+dependencies = [
+    "fastapi>=0.162.0",
+    "httpx>=0.28.1",
+    "pydantic-settings>=2.16.1",
+    "uvicorn>=0.54.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.1",
+    "respx>=0.23.1",
+    "ruff>=0.17.3",
+]
