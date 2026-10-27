@@ -24,7 +24,7 @@ test('nav bar links to every page', () => {
   renderAt('/')
   const nav = screen.getByRole('navigation')
   expect(nav).toHaveTextContent('Home')
-  expect(screen.getByRole('link', { name: 'My Cards' })).toHaveAttribute('href', '/cards')
+  expect(screen.queryByRole('link', { name: 'My Cards' })).toBeNull()
   expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/settings')
 })
 

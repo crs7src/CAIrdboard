@@ -86,8 +86,8 @@ export default function CardDetail() {
 
   const backButton = (
     <Box>
-      <Button startIcon={<ArrowBackIcon />} component={RouterLink} to="/cards">
-        Back to My Cards
+      <Button startIcon={<ArrowBackIcon />} component={RouterLink} to="/">
+        Back to Home
       </Button>
     </Box>
   )

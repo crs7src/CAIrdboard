@@ -306,14 +306,14 @@ test('shows an error when the card cannot be loaded', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent('Card AB-1 not found')
 })
 
-test('has a back link to My Cards, even when the card fails to load', async () => {
+test('has a back link to Home, even when the card fails to load', async () => {
   mockApi({ '/api/cards/AB-1': { body: detail() }, '/api/cards/AB-1/plan': NO_PLAN })
   renderDetail()
-  expect(await screen.findByRole('link', { name: 'Back to My Cards' })).toHaveAttribute('href', '/cards')
+  expect(await screen.findByRole('link', { name: 'Back to Home' })).toHaveAttribute('href', '/')
   vi.unstubAllGlobals()
   mockApi({ '/api/cards/AB-1': { status: 404, body: { detail: 'nope' } } })
   renderDetail()
-  expect(await screen.findAllByRole('link', { name: 'Back to My Cards' })).toHaveLength(2)
+  expect(await screen.findAllByRole('link', { name: 'Back to Home' })).toHaveLength(2)
 })
 
 test('comments are collapsed by default', async () => {

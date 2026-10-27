@@ -5,9 +5,9 @@ const cards = [
   { key: 'AB-2', summary: 'Second card', status: 'In Progress', priority: null, url: 'https://x.atlassian.net/browse/AB-2', project: 'AB', description: '' },
 ]
 
-test('cards page lists assigned Jira cards and re-syncs', async ({ page }) => {
+test('home page splits cards into In Progress and To Do and re-syncs', async ({ page }) => {
   let calls = 0
-  await page.route('**/api/plans', (route) => route.fulfill({ json: {} }))
+  await page.route('**/api/plans', (route) => route.fulfill({ json: { 'AB-2': 'ready' } }))
   await page.route('**/api/reviews', (route) => route.fulfill({ json: {} }))
   await page.route('**/api/implementations', (route) => route.fulfill({ json: {} }))
   await page.route('**/api/ai-config', (route) =>
@@ -18,9 +18,8 @@ test('cards page lists assigned Jira cards and re-syncs', async ({ page }) => {
     return route.fulfill({ json: cards })
   })
   await page.goto('/')
-  await page.getByRole('link', { name: 'My Cards' }).click()
-  await expect(page.getByRole('link', { name: /AB-1/ })).toBeVisible()
-  await expect(page.getByText('Second card')).toBeVisible()
+  await expect(page.getByRole('region', { name: 'To Do' }).getByRole('link', { name: /AB-1/ })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'In Progress' }).getByText('Second card')).toBeVisible()
   // Only the To Do card is eligible for a plan.
   await expect(page.getByText('Plan: available')).toHaveCount(1)
 
@@ -29,10 +28,10 @@ test('cards page lists assigned Jira cards and re-syncs', async ({ page }) => {
   await expect.poll(() => calls).toBeGreaterThan(before)
 })
 
-test('cards page shows an error when Jira is not configured', async ({ page }) => {
+test('home page shows an error when Jira is not configured', async ({ page }) => {
   await page.route('**/api/cards', (route) =>
     route.fulfill({ status: 503, json: { detail: 'Jira is not configured' } }),
   )
-  await page.goto('/cards')
+  await page.goto('/')
   await expect(page.getByRole('alert')).toContainText('Jira is not configured')
 })

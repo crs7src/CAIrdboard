@@ -130,7 +130,7 @@ async function mockBackend(page: Page, cardOver = {}) {
 
 test('generate, review and approve a plan for a card', async ({ page }) => {
   await mockBackend(page)
-  await page.goto('/cards')
+  await page.goto('/')
   await expect(page.getByText('Plan: available')).toBeVisible()
   // Clicking the summary text (not a link) still opens the card.
   await page.getByText('First card').click()
@@ -158,19 +158,19 @@ test('generate, review and approve a plan for a card', async ({ page }) => {
   await expect(page.getByText('approved', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0)
 
-  await page.goto('/cards')
+  await page.goto('/')
   await expect(page.getByText('Implementation: available')).toBeVisible()
   await expect(page.getByRole('img', { name: 'Plan' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Implement' })).toBeEnabled()
   await expect(page.getByRole('button', { name: 'Review' })).toBeDisabled()
 })
 
-test('plan and implement can be started from the cards list', async ({ page }) => {
+test('plan and implement can be started from the home page', async ({ page }) => {
   await mockBackend(page)
-  await page.goto('/cards')
+  await page.goto('/')
   await expect(page.getByRole('button', { name: 'Implement' })).toBeDisabled()
   await page.getByRole('button', { name: 'Plan' }).click()
-  await expect(page).toHaveURL(/\/cards$/)
+  await expect(page).toHaveURL(/\/$/)
   await expect(page.getByText('Plan: running')).toBeVisible()
 })
 
@@ -223,20 +223,20 @@ test('cards in testing status cannot get a plan', async ({ page }) => {
   await expect(page.getByRole('button', { name: /Generate plan|Run plan/ })).toHaveCount(0)
 })
 
-test('back button returns to My Cards', async ({ page }) => {
+test('back button returns to Home', async ({ page }) => {
   await mockBackend(page)
   await page.goto('/cards/AB-1')
-  await page.getByRole('link', { name: 'Back to My Cards' }).click()
-  await expect(page).toHaveURL(/\/cards$/)
-  await expect(page.getByRole('heading', { name: 'My Cards' })).toBeVisible()
+  await page.getByRole('link', { name: 'Back to Home' }).click()
+  await expect(page).toHaveURL(/\/$/)
+  await expect(page.getByRole('heading', { name: 'CAIrdboard', level: 1 })).toBeVisible()
 })
 
-test('Plan button on My Cards opens a ready plan expanded', async ({ page }) => {
+test('Plan button on Home opens a ready plan expanded', async ({ page }) => {
   await mockBackend(page)
   await page.goto('/cards/AB-1')
   await page.getByRole('button', { name: 'Run plan', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Review plan', exact: true })).toBeVisible({ timeout: 10_000 })
-  await page.getByRole('link', { name: 'Back to My Cards' }).click()
+  await page.getByRole('link', { name: 'Back to Home' }).click()
   await page.getByRole('button', { name: 'Plan', exact: true }).click()
   await expect(page).toHaveURL(/open=plan/)
   await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeVisible()
@@ -254,7 +254,7 @@ test('a completed implementation can be reviewed from the card and the list', as
   await page.getByRole('button', { name: /^Review clean/ }).click({ timeout: 15_000 })
   await expect(page.getByRole('heading', { name: 'Review summary' })).toBeVisible()
 
-  await page.getByRole('link', { name: 'Back to My Cards' }).click()
+  await page.getByRole('link', { name: 'Back to Home' }).click()
   await expect(page.getByText('Review: clean')).toBeVisible()
   await expect(page.getByRole('img', { name: 'Review', exact: true })).toBeVisible()
 })

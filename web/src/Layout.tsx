@@ -7,7 +7,6 @@ import { Link, Outlet, useLocation } from 'react-router-dom'
 
 const links = [
   { to: '/', label: 'Home' },
-  { to: '/cards', label: 'My Cards' },
   { to: '/settings', label: 'Settings' },
 ]
 
@@ -19,7 +18,7 @@ export default function Layout() {
       <AppBar position="static">
         <Toolbar>
           <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-            AI Card Board
+            CAIrdboard
           </Typography>
           <nav>
             {links.map((l) => (
