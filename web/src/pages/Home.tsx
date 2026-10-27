@@ -18,6 +18,9 @@ import {
   fetchImplementationStates,
   fetchPlanStates,
   fetchReviewStates,
+  fetchTestStates,
+  startTest,
+  type TestState,
   generatePlan,
   startReview,
   startImplementation,
@@ -46,6 +49,12 @@ function reviewStep(impl: ImplState | undefined, review: ReviewState | undefined
   return impl === 'completed' ? 'next' : 'blocked'
 }
 
+function testStep(review: ReviewState | undefined, test: TestState | undefined): StepStatus {
+  if (test === 'running') return 'done'
+  if (test === 'preparing') return 'running'
+  return review === 'clean' ? 'next' : 'blocked'
+}
+
 function implementStep(plan: PlanState | undefined, impl: ImplState | undefined, canRun: boolean): StepStatus {
   if (impl === 'completed') return 'done'
   if (impl === 'running') return 'running'
@@ -58,6 +67,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false)
   const [plans, setPlans] = useState<Record<string, PlanState>>({})
   const [reviews, setReviews] = useState<Record<string, ReviewState>>({})
+  const [tests, setTests] = useState<Record<string, TestState>>({})
   const [impls, setImpls] = useState<Record<string, ImplState>>({})
   const [config, setConfig] = useState<AiConfig | null>(null)
 
@@ -80,15 +90,17 @@ export default function Home() {
     try {
       setCards(await fetchCards())
       // Plan info only decorates the list, so failures here are not fatal.
-      const [p, im, rv, cfg] = await Promise.all([
+      const [p, im, rv, ts, cfg] = await Promise.all([
         fetchPlanStates().catch(() => ({})),
         fetchImplementationStates().catch(() => ({})),
         fetchReviewStates().catch(() => ({})),
+        fetchTestStates().catch(() => ({})),
         fetchAiConfig().catch(() => null),
       ])
       setPlans(p)
       setImpls(im)
       setReviews(rv)
+      setTests(ts)
       setConfig(cfg)
     } catch (e) {
       setError((e as Error).message)
@@ -183,6 +195,16 @@ export default function Home() {
                 )
               }
             />
+            <StepButton
+              label="Test"
+              status={testStep(reviews[card.key], tests[card.key])}
+              onRun={() =>
+                run(
+                  () => startTest(card.key),
+                  () => setTests((t) => ({ ...t, [card.key]: 'preparing' })),
+                )
+              }
+            />
           </Box>
           <CardActionArea component={RouterLink} to={`/cards/${card.key}`}>
             <CardContent>
@@ -192,7 +214,14 @@ export default function Home() {
               </Typography>
               <Chip label={card.status} size="small" />
               {card.priority && <Chip label={card.priority} size="small" color="warning" />}
-              {plans[card.key] === 'approved' && impls[card.key] === 'completed' ? (
+              {reviews[card.key] === 'clean' ? (
+                <Chip
+                  label={`Test: ${tests[card.key] ?? 'available'}`}
+                  size="small"
+                  color={tests[card.key] ? undefined : 'primary'}
+                  variant="outlined"
+                />
+              ) : plans[card.key] === 'approved' && impls[card.key] === 'completed' ? (
                 <Chip
                   label={`Review: ${reviews[card.key] ?? 'available'}`}
                   size="small"

@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     implement_timeout_seconds: float = 3600
     feedback_dir: Path = Path("data/feedback")
     feedback_timeout_seconds: float = 1800
+    test_runs_dir: Path = Path("data/test_runs")
+    test_timeout_seconds: float = 1200
+    test_ready_timeout_seconds: float = 90
     reviews_dir: Path = Path("data/reviews")
     review_timeout_seconds: float = 1800
 

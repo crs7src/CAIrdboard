@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app import feedback, implementer, planner, reviewer, skills
+from app import feedback, implementer, planner, reviewer, skills, tester
 from app.main import app
 
 PLANNER_OK = "intro\n## Mode: default\nA\n## Mode: reopened\nB\n"
@@ -20,6 +20,7 @@ def test_defaults_are_used_when_nothing_is_customised(client):
         "implementer",
         "reviewer",
         "feedback",
+        "tester",
     ]
     for s in data:
         assert s["customized"] is False
@@ -33,11 +34,13 @@ def test_override_replaces_the_default_in_each_loader(client):
     )
     client.put("/api/skills/reviewer", json={"content": "MY REVIEW"})
     client.put("/api/skills/feedback", json={"content": "MY FEEDBACK"})
+    client.put("/api/skills/tester", json={"content": "MY TESTER"})
     assert "A" in planner.load_skill(False) and "intro" in planner.load_skill(False)
     assert planner.load_skill(True).endswith("B")
     assert implementer.load_skill() == "MY IMPL"
     assert reviewer.load_skill() == "MY REVIEW"
     assert feedback.load_skill() == "MY FEEDBACK"
+    assert tester.load_skill() == "MY TESTER"
     assert all(s["customized"] for s in client.get("/api/skills").json())
 
 
@@ -69,6 +72,7 @@ def test_prompts_always_start_with_the_agents_instructions(client):
     client.put("/api/skills/implementer", json={"content": "MY IMPL"})
     client.put("/api/skills/planner", json={"content": PLANNER_OK})
     client.put("/api/skills/feedback", json={"content": "MY FEEDBACK"})
+    client.put("/api/skills/tester", json={"content": "MY TESTER"})
     from test_plans import _card
 
     card = _card()
@@ -84,6 +88,7 @@ def test_prompts_always_start_with_the_agents_instructions(client):
     )
     prompts = [
         feedback.build_prompt(card, "plan", impl, []),
+        tester.build_prompt(card, "plan", impl),
         planner.build_prompt(card, None, None),
         implementer.build_prompt(card, "plan", "br", "abc"),
         reviewer.build_prompt(

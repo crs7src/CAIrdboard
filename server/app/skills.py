@@ -10,6 +10,7 @@ BUNDLED_NAMES = {
     "implementer": "card-implementer",
     "reviewer": "card-reviewer",
     "feedback": "card-feedback",
+    "tester": "card-tester",
 }
 STEPS = tuple(BUNDLED_NAMES)
 PLANNER_MODES = ("default", "reopened")

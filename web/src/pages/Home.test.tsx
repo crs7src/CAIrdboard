@@ -182,7 +182,7 @@ test('a clean review shows a check; a review with fixes can be run again', async
     '/api/ai-config': { body: withRepo },
   })
   renderHome()
-  expect(await screen.findByText('Review: clean')).toBeInTheDocument()
+  expect(await screen.findByText('Test: available')).toBeInTheDocument()
   expect(screen.getByText('Review: fixed')).toBeInTheDocument()
   expect(screen.getAllByRole('img', { name: 'Review' })).toHaveLength(1)
   expect(screen.getAllByRole('button', { name: 'Review' })).toHaveLength(1)
@@ -298,4 +298,47 @@ test('the In Review/Done section is hidden when empty', async () => {
   renderHome()
   await screen.findByRole('link', { name: /AB-1/ })
   expect(screen.queryByRole('region', { name: 'In Review/Done' })).not.toBeInTheDocument()
+})
+
+test('a clean review unlocks the Test step, and a running app shows a check', async () => {
+  mockApi({
+    '/api/cards': { body: [card('AB-1'), card('AB-2')] },
+    '/api/plans': { body: { 'AB-1': 'approved', 'AB-2': 'approved' } },
+    '/api/implementations': { body: { 'AB-1': 'completed', 'AB-2': 'completed' } },
+    '/api/reviews': { body: { 'AB-1': 'clean', 'AB-2': 'clean' } },
+    '/api/tests': { body: { 'AB-2': 'running' } },
+    '/api/ai-config': { body: withRepo },
+  })
+  renderHome()
+  expect(await screen.findByText('Test: available')).toBeInTheDocument()
+  expect(screen.getByText('Test: running')).toBeInTheDocument()
+  expect(screen.getAllByRole('button', { name: 'Test' })).toHaveLength(1)
+  expect(screen.getAllByRole('img', { name: 'Test' })).toHaveLength(1)
+})
+
+test('Test is disabled until the review is clean', async () => {
+  mockApi({
+    '/api/cards': { body: [card('AB-1')] },
+    '/api/plans': { body: { 'AB-1': 'approved' } },
+    '/api/implementations': { body: { 'AB-1': 'completed' } },
+    '/api/reviews': { body: { 'AB-1': 'fixed' } },
+    '/api/ai-config': { body: withRepo },
+  })
+  renderHome()
+  expect(await screen.findByRole('button', { name: 'Test' })).toBeDisabled()
+})
+
+test('clicking Test starts the manual test', async () => {
+  const fetchMock = mockApi({
+    '/api/cards': { body: [card('AB-1')] },
+    '/api/plans': { body: { 'AB-1': 'approved' } },
+    '/api/implementations': { body: { 'AB-1': 'completed' } },
+    '/api/reviews': { body: { 'AB-1': 'clean' } },
+    '/api/ai-config': { body: withRepo },
+    'POST /api/cards/AB-1/test': { status: 202, body: { state: 'preparing' } },
+  })
+  renderHome()
+  await userEvent.click(await screen.findByRole('button', { name: 'Test' }))
+  await vi.waitFor(() => expect(screen.getByText('Test: preparing')).toBeInTheDocument())
+  expect(fetchMock).toHaveBeenCalledWith('/api/cards/AB-1/test', expect.objectContaining({ method: 'POST' }))
 })

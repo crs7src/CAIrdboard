@@ -25,7 +25,13 @@ const STATE_LABEL = {
   failed: 'failed',
 }
 
-export default function Review({ cardKey }: { cardKey: string }) {
+export default function Review({
+  cardKey,
+  onStateChange,
+}: {
+  cardKey: string
+  onStateChange?: (state: ReviewData['state'] | undefined) => void
+}) {
   const [review, setReview] = useState<ReviewData | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -43,6 +49,10 @@ export default function Review({ cardKey }: { cardKey: string }) {
       },
     )
   }, [cardKey])
+
+  useEffect(() => {
+    onStateChange?.(review?.state)
+  }, [review?.state, onStateChange])
 
   const running = review?.state === 'running'
   useEffect(() => {

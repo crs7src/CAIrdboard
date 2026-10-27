@@ -255,7 +255,7 @@ test('a completed implementation can be reviewed from the card and the list', as
   await expect(page.getByRole('heading', { name: 'Review summary' })).toBeVisible()
 
   await page.getByRole('link', { name: 'Back to Home' }).click()
-  await expect(page.getByText('Review: clean')).toBeVisible()
+  await expect(page.getByText('Test: available')).toBeVisible()
   await expect(page.getByRole('img', { name: 'Review', exact: true })).toBeVisible()
 })
 

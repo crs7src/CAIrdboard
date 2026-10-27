@@ -94,6 +94,22 @@ export const review = (over: Record<string, unknown> = {}) => ({
   ...over,
 })
 
+export const testRun = (over: Record<string, unknown> = {}) => ({
+  card_key: 'AB-1',
+  version: 1,
+  review_version: 1,
+  state: 'running',
+  branch: 'AB-1_add_dark_mode',
+  apps: [{ name: 'web', start_command: 'npm run dev', workdir: '.', ready_url: 'http://localhost:5173/' }],
+  links: [{ title: 'Settings page', url: 'http://localhost:5173/settings', check: 'Toggle dark mode' }],
+  notes: [],
+  report: null,
+  error: null,
+  created_at: 't',
+  updated_at: 't',
+  ...over,
+})
+
 export const SAMPLE_DIFF = `diff --git a/src/a.ts b/src/a.ts
 index 111..222 100644
 --- a/src/a.ts

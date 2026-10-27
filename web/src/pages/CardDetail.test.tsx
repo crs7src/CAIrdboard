@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, expect, test, vi } from 'vitest'
-import { card, implementation, mockApi, plan } from '../test-utils'
+import { card, implementation, mockApi, plan, review, testRun } from '../test-utils'
 import CardDetail, { POLL_MS } from './CardDetail'
 
 afterEach(() => {
@@ -219,6 +219,24 @@ test('review section appears only once the implementation is completed', async (
   mockApi({ ...base, '/api/cards/AB-1/implementation': { body: implementation() } })
   renderDetail()
   expect(await screen.findByRole('button', { name: 'Start review' })).toBeInTheDocument()
+})
+
+test('the Test section appears only once the review is clean', async () => {
+  const base = {
+    '/api/cards/AB-1': { body: detail() },
+    '/api/cards/AB-1/plan': { body: plan({ state: 'approved' }) },
+    '/api/cards/AB-1/implementation': { body: implementation() },
+    '/api/cards/AB-1/test': { body: testRun() },
+  }
+  mockApi({ ...base, '/api/cards/AB-1/review': { body: review({ state: 'fixed' }) } })
+  renderDetail()
+  await screen.findByText('fixes made')
+  expect(screen.queryByRole('heading', { name: 'Test' })).not.toBeInTheDocument()
+  vi.unstubAllGlobals()
+
+  mockApi({ ...base, '/api/cards/AB-1/review': { body: review() } })
+  renderDetail()
+  expect(await screen.findByText('app running')).toBeInTheDocument()
 })
 
 test('View changes links to the changes page once an implementation exists', async () => {

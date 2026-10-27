@@ -21,6 +21,7 @@ import Markdown from 'react-markdown'
 import { Link as RouterLink, useParams, useSearchParams } from 'react-router-dom'
 import Implementation from './Implementation'
 import Review from './Review'
+import Test from './Test'
 import {
   decidePlan,
   fetchCardDetail,
@@ -43,6 +44,7 @@ export default function CardDetail() {
   const [planOpen, setPlanOpen] = useState(searchParams.get('open') === 'plan')
   const [focusApprove, setFocusApprove] = useState(false)
   const [implState, setImplState] = useState<string | null>(null)
+  const [reviewState, setReviewState] = useState<string | undefined>()
   const approveRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
@@ -314,7 +316,10 @@ export default function CardDetail() {
         <Implementation cardKey={key} onStateChange={setImplState} />
       )}
       {plan?.state === 'approved' && card.repo_configured && implState === 'completed' && (
-        <Review cardKey={key} />
+        <>
+          <Review cardKey={key} onStateChange={setReviewState} />
+          {reviewState === 'clean' && <Test cardKey={key} />}
+        </>
       )}
     </Stack>
   )

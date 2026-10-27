@@ -22,6 +22,10 @@ const TITLES: Record<Skill['step'], { title: string; help: string }> = {
     title: 'Review feedback',
     help: 'Instructions for the AI that makes the edits you ask for on the Changes page.',
   },
+  tester: {
+    title: 'Manual testing',
+    help: 'Instructions for the AI that works out how to run the app and what to test. It must end with the JSON block described in the default.',
+  },
 }
 
 function SkillEditor({ initial }: { initial: Skill }) {

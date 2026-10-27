@@ -127,7 +127,7 @@ export async function saveAiConfig(config: AiConfig): Promise<AiConfig> {
 }
 
 export interface Skill {
-  step: 'planner' | 'implementer' | 'reviewer' | 'feedback'
+  step: 'planner' | 'implementer' | 'reviewer' | 'feedback' | 'tester'
   content: string
   default_content: string
   customized: boolean
@@ -270,6 +270,48 @@ export async function startReview(key: string): Promise<Review> {
 
 export async function fetchReviewStates(): Promise<Record<string, ReviewState>> {
   const response = await fetch('/api/reviews')
+  if (!response.ok) throw await failure(response)
+  return response.json()
+}
+
+export type TestState = 'preparing' | 'running' | 'stopped' | 'failed'
+
+export interface TestRun {
+  card_key: string
+  version: number
+  review_version: number | null
+  state: TestState
+  branch: string | null
+  apps: { name: string; start_command: string; workdir: string; ready_url: string }[]
+  links: { title: string; url: string; check: string }[]
+  notes: string[]
+  report: string | null
+  error: string | null
+  created_at: string
+  updated_at: string
+}
+
+export async function fetchTest(key: string): Promise<TestRun | null> {
+  const response = await fetch(`/api/cards/${key}/test`)
+  if (response.status === 404) return null
+  if (!response.ok) throw await failure(response)
+  return response.json()
+}
+
+export async function startTest(key: string): Promise<TestRun> {
+  const response = await fetch(`/api/cards/${key}/test`, { method: 'POST' })
+  if (!response.ok) throw await failure(response)
+  return response.json()
+}
+
+export async function stopTest(key: string): Promise<TestRun> {
+  const response = await fetch(`/api/cards/${key}/test`, { method: 'DELETE' })
+  if (!response.ok) throw await failure(response)
+  return response.json()
+}
+
+export async function fetchTestStates(): Promise<Record<string, TestState>> {
+  const response = await fetch('/api/tests')
   if (!response.ok) throw await failure(response)
   return response.json()
 }

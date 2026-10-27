@@ -1,14 +1,23 @@
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from pydantic import BaseModel, field_validator
 
-from app import changes, feedback, implementer, jira, planner, reviewer, skills
+from app import changes, feedback, implementer, jira, planner, reviewer, skills, tester
 from app.ai_config import AiConfig, load_ai_config, save_ai_config
 from app.config import Settings, get_settings, save_credentials
 
-app = FastAPI(title="AI Card Board")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    yield
+    # Apps started for manual testing must not outlive the server.
+    await tester.stop_all(get_settings().test_runs_dir)
+
+
+app = FastAPI(title="AI Card Board", lifespan=lifespan)
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
@@ -599,6 +608,95 @@ async def submit_feedback(
         runner,
     )
     return run
+
+
+@app.get("/api/tests")
+def test_states(settings: SettingsDep) -> dict[str, str]:
+    store = tester.TestStore(settings.test_runs_dir)
+    states: dict[str, str] = {}
+    if settings.test_runs_dir.exists():
+        for d in sorted(settings.test_runs_dir.iterdir()):
+            run = tester.recover_stale(store, store.latest(d.name))
+            if run:
+                states[d.name] = run.state
+    return states
+
+
+@app.post("/api/cards/{key}/test", status_code=202)
+async def start_test(
+    key: str,
+    settings: SettingsDep,
+    runner: RunnerDep,
+    background: BackgroundTasks,
+) -> tester.TestRun:
+    """Have an AI work out how to run the reviewed branch, then run it for manual testing."""
+    key = _valid_key(key)
+    impl = implementer.ImplementationStore(settings.implementations_dir).latest(key)
+    if impl is None or impl.state != "completed" or not impl.branch:
+        raise HTTPException(409, "The card has no completed implementation to test")
+    review = reviewer.ReviewStore(settings.reviews_dir).latest(key)
+    if review is None or review.state != "clean":
+        raise HTTPException(409, "The review must be clean before testing")
+    plan = planner.PlanStore(settings.plans_dir).latest(key)
+    if plan is None or not plan.plan:
+        raise HTTPException(409, "The card has no plan")
+    card = await _load_card(settings, key)
+    repo = _repo_for_key(settings, key)
+
+    store = tester.TestStore(settings.test_runs_dir)
+    previous = tester.recover_stale(store, store.latest(key))
+    if (
+        key in tester.ACTIVE
+        or key in implementer.ACTIVE
+        or key in reviewer.ACTIVE
+        or key in feedback.ACTIVE
+        or (previous and previous.state in ("preparing", "running"))
+    ):
+        raise HTTPException(409, "This card is already being worked on")
+    if repo in implementer.ACTIVE_REPOS:
+        raise HTTPException(
+            409,
+            "Another run or a running test app is using this repo. Wait or stop it first.",
+        )
+
+    run = store.create(key, impl, review.version)
+    tester.ACTIVE.add(key)
+    implementer.ACTIVE_REPOS.add(repo)
+    background.add_task(
+        tester.run_test,
+        store,
+        run,
+        impl,
+        card,
+        plan.plan,
+        repo,
+        settings.copilot_command,
+        settings.test_timeout_seconds,
+        settings.test_ready_timeout_seconds,
+        runner,
+    )
+    return run
+
+
+@app.get("/api/cards/{key}/test")
+def get_test(key: str, settings: SettingsDep) -> tester.TestRun:
+    key = _valid_key(key)
+    store = tester.TestStore(settings.test_runs_dir)
+    run = tester.recover_stale(store, store.latest(key))
+    if run is None:
+        raise HTTPException(404, "No test run exists for this card")
+    return run
+
+
+@app.delete("/api/cards/{key}/test")
+async def stop_test(key: str, settings: SettingsDep) -> tester.TestRun:
+    """Stop the running test app and free the repo."""
+    key = _valid_key(key)
+    store = tester.TestStore(settings.test_runs_dir)
+    run = await tester.stop_app(store, key)
+    if run is None:
+        raise HTTPException(404, "No test run exists for this card")
+    return tester.recover_stale(store, run) or run
 
 
 @app.get("/api/cards/{key}/changes")
