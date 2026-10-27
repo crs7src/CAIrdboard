@@ -68,7 +68,7 @@ export default function Cards() {
         <Alert
           severity="error"
           action={
-            <Button color="inherit" size="small" component={RouterLink} to="/settings">
+            <Button color="inherit" size="small" component={RouterLink} to="/settings/jira">
               Update your Jira settings
             </Button>
           }

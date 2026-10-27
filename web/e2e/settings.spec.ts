@@ -18,6 +18,7 @@ test('user can set up Jira credentials from Settings', async ({ page }) => {
 
   await page.goto('/')
   await page.getByRole('link', { name: 'Settings', exact: true }).click()
+  await page.getByRole('tab', { name: 'Jira' }).click()
   await page.getByLabel('Jira site URL').fill('https://a.atlassian.net')
   await page.getByLabel('Jira email').fill('me@x.com')
   await page.getByLabel('Jira API token').fill('my-secret')
@@ -35,7 +36,7 @@ test('rejected credentials show an error', async ({ page }) => {
   await page.route('**/api/jira/credentials', (route) =>
     route.fulfill({ status: 400, json: { detail: 'Jira did not accept these credentials: Jira returned 401' } }),
   )
-  await page.goto('/settings')
+  await page.goto('/settings/jira')
   await page.getByLabel('Jira site URL').fill('https://a.atlassian.net')
   await page.getByLabel('Jira email').fill('me@x.com')
   await page.getByLabel('Jira API token').fill('bad')

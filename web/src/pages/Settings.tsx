@@ -65,8 +65,8 @@ export default function Settings() {
   return (
     <Box component="form" onSubmit={onSubmit} sx={{ maxWidth: 560 }}>
       <Stack spacing={2}>
-      <Typography variant="h4" component="h1">
-        Settings
+      <Typography variant="h6" component="h2">
+        Jira connection
       </Typography>
       {status?.connected && <Alert severity="success" role="note">Connected to Jira as {status.user}.</Alert>}
       {status?.configured && !status.connected && (

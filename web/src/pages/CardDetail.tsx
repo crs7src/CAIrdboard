@@ -103,7 +103,7 @@ export default function CardDetail() {
           severity="warning"
           role="note"
           action={
-            <Button color="inherit" size="small" component={RouterLink} to="/ai-settings">
+            <Button color="inherit" size="small" component={RouterLink} to="/settings/ai">
               AI Settings
             </Button>
           }

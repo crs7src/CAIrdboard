@@ -1,4 +1,5 @@
 import Alert from '@mui/material/Alert'
+import Autocomplete from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import IconButton from '@mui/material/IconButton'
@@ -7,7 +8,8 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import DeleteIcon from '@mui/icons-material/Delete'
 import { useEffect, useState, type FormEvent } from 'react'
-import { fetchAiConfig, saveAiConfig } from '../api'
+import FolderPicker from './FolderPicker'
+import { fetchAiConfig, fetchCards, saveAiConfig } from '../api'
 
 interface Row {
   project: string
@@ -17,6 +19,8 @@ interface Row {
 export default function AiSettings() {
   const [statuses, setStatuses] = useState('')
   const [rows, setRows] = useState<Row[]>([])
+  const [projects, setProjects] = useState<string[]>([])
+  const [picking, setPicking] = useState<number | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -30,6 +34,11 @@ export default function AiSettings() {
         setLoaded(true)
       },
       (e: Error) => setError(e.message),
+    )
+    // Best-effort: without Jira the field just behaves as free text.
+    fetchCards().then(
+      (cards) => setProjects([...new Set(cards.map((c) => c.project))].sort()),
+      () => {},
     )
   }, [])
 
@@ -60,8 +69,8 @@ export default function AiSettings() {
   return (
     <Box component="form" onSubmit={onSubmit} sx={{ maxWidth: 640 }}>
       <Stack spacing={2}>
-        <Typography variant="h4" component="h1">
-          AI Settings
+        <Typography variant="h6" component="h2">
+          AI planning
         </Typography>
         <TextField
           label="Eligible Jira statuses"
@@ -77,11 +86,18 @@ export default function AiSettings() {
         </Typography>
         {rows.map((row, i) => (
           <Stack key={i} direction="row" spacing={1}>
-            <TextField
-              label={`Project key ${i + 1}`}
+            <Autocomplete
+              freeSolo
               size="small"
-              value={row.project}
-              onChange={(e) => setRow(i, { project: e.target.value })}
+              sx={{ minWidth: 180 }}
+              options={projects.filter(
+                (p) => p === row.project || !rows.some((r) => r.project === p),
+              )}
+              inputValue={row.project}
+              onInputChange={(_, v) => setRow(i, { project: v.toUpperCase() })}
+              renderInput={(params) => (
+                <TextField {...params} label={`Project key ${i + 1}`} />
+              )}
             />
             <TextField
               label={`Repo path ${i + 1}`}
@@ -90,6 +106,9 @@ export default function AiSettings() {
               value={row.path}
               onChange={(e) => setRow(i, { path: e.target.value })}
             />
+            <Button onClick={() => setPicking(i)} aria-label={`Browse for repo ${i + 1}`}>
+              Browse
+            </Button>
             <IconButton
               aria-label={`Remove project ${i + 1}`}
               onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))}
@@ -103,6 +122,16 @@ export default function AiSettings() {
             Add project
           </Button>
         </Box>
+        <FolderPicker
+          open={picking !== null}
+          initialPath={picking !== null ? (rows[picking]?.path ?? '') : ''}
+          onClose={() => setPicking(null)}
+          onSelect={(path) => {
+            if (picking !== null) setRow(picking, { path })
+            setPicking(null)
+            setSaved(false)
+          }}
+        />
         <Button type="submit" variant="contained" disabled={saving || !loaded}>
           Save AI settings
         </Button>

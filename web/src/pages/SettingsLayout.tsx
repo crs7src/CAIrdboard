@@ -1,0 +1,30 @@
+import Stack from '@mui/material/Stack'
+import Tab from '@mui/material/Tab'
+import Tabs from '@mui/material/Tabs'
+import Typography from '@mui/material/Typography'
+import { Link, Outlet, useLocation } from 'react-router-dom'
+
+export default function SettingsLayout() {
+  const { pathname } = useLocation()
+  return (
+    <Stack spacing={2}>
+      <Typography variant="h4" component="h1">
+        Settings
+      </Typography>
+      <Tabs
+        value={pathname.startsWith('/settings/jira') ? '/settings/jira' : '/settings/ai'}
+        sx={{
+          bgcolor: '#0d2a4d',
+          borderRadius: 1,
+          '& .MuiTab-root': { color: '#fff' },
+          '& .MuiTab-root.Mui-selected': { color: '#fff' },
+          '& .MuiTabs-indicator': { backgroundColor: '#fff' },
+        }}
+      >
+        <Tab label="AI" value="/settings/ai" component={Link} to="/settings/ai" />
+        <Tab label="Jira" value="/settings/jira" component={Link} to="/settings/jira" />
+      </Tabs>
+      <Outlet />
+    </Stack>
+  )
+}

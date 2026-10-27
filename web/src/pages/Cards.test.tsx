@@ -78,7 +78,7 @@ test('shows the server error detail with a link to settings', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent('Jira is not configured')
   expect(screen.getByRole('link', { name: 'Update your Jira settings' })).toHaveAttribute(
     'href',
-    '/settings',
+    '/settings/jira',
   )
 })
 

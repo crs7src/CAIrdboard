@@ -54,8 +54,8 @@ Test tooling (frontend tests are `src/**/*.test.tsx`, e2e specs are `web/e2e/`; 
 
 ## Plan generation (per card)
 
-- Only cards whose Jira status is in `eligible_statuses` (`server/data/ai_config.json`, editable at `/ai-settings`; default Backlog, Ready to Play, DEV In Progress, Merge Requested, To Do, In Progress) can get a plan; Testing/UAT/Prod cannot (API returns 409).
+- Only cards whose Jira status is in `eligible_statuses` (`server/data/ai_config.json`, editable at `/settings/ai`; default Backlog, Ready to Play, DEV In Progress, Merge Requested, To Do, In Progress) can get a plan; Testing/UAT/Prod cannot (API returns 409).
 - `ai_config.json` also maps Jira project key → absolute repo path; the AI runs with that repo as cwd.
 - `app/planner.py` runs `copilot -s -p <prompt> --available-tools view grep glob --allow-tool view grep glob` (read-only, no shell) as a background task. Plans are stored as `server/data/plans/<KEY>/<n>.json` (gitignored), states: `running` → `ready` → `approved`/`rejected`, or `failed`. Regenerating accepts optional user feedback and includes the previous plan in the prompt. `approved` is the hook for the future implement/review stages.
 - Backend tests inject a `FakeRunner` via the `get_runner` dependency; frontend unit tests use `mockApi` from `web/src/test-utils.ts`; e2e mocks plan endpoints with `page.route`.
-- Routes: `/cards/:key` (card detail + plan), `/ai-settings`.
+- Routes: `/cards/:key` (card detail + plan), `/settings/ai` (AI tab, the default; `/settings` and `/ai-settings` redirect here) and `/settings/jira` (Jira tab).

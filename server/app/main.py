@@ -148,6 +148,36 @@ def put_ai_config(config: AiConfig, settings: SettingsDep) -> AiConfig:
     return config
 
 
+class DirEntry(BaseModel):
+    name: str
+    is_git: bool
+
+
+class DirListing(BaseModel):
+    path: str
+    parent: str | None
+    dirs: list[DirEntry]
+
+
+@app.get("/api/fs/dirs")
+def list_dirs(path: str | None = None) -> DirListing:
+    """List sub-folders (never files) of a directory, for the repo picker."""
+    target = Path(path).expanduser() if path else Path.home()
+    if not target.is_absolute() or not target.is_dir():
+        raise HTTPException(404, "Folder not found")
+    target = target.resolve()
+    dirs: list[DirEntry] = []
+    try:
+        for child in sorted(target.iterdir(), key=lambda p: p.name.lower()):
+            if child.name.startswith(".") or not child.is_dir():
+                continue
+            dirs.append(DirEntry(name=child.name, is_git=(child / ".git").exists()))
+    except PermissionError:
+        raise HTTPException(403, "Permission denied") from None
+    parent = str(target.parent) if target.parent != target else None
+    return DirListing(path=str(target), parent=parent, dirs=dirs)
+
+
 @app.get("/api/plans")
 def plan_states(settings: SettingsDep) -> dict[str, str]:
     """Latest plan state for every card that has one."""

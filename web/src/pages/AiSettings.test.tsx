@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, test, vi } from 'vitest'
-import { mockApi } from '../test-utils'
+import { card, mockApi } from '../test-utils'
 import AiSettings from './AiSettings'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -66,4 +66,51 @@ test('shows validation errors from the server', async () => {
   await userEvent.type(screen.getByLabelText('Repo path 1'), 'x')
   await userEvent.click(screen.getByRole('button', { name: 'Save AI settings' }))
   expect(await screen.findByRole('alert')).toHaveTextContent('must be absolute')
+})
+
+test('project key suggests only projects with cards, excluding ones already used', async () => {
+  mockApi({
+    '/api/ai-config': { body: config },
+    '/api/cards': { body: [card('AB-1'), card('XY-1'), card('XY-2'), card('ZZ-1')] },
+  })
+  render(<AiSettings />)
+  await screen.findByLabelText('Eligible Jira statuses')
+  await userEvent.click(screen.getByRole('button', { name: 'Add project' }))
+  await userEvent.click(screen.getByLabelText('Project key 2'))
+  const options = (await screen.findAllByRole('option')).map((o) => o.textContent)
+  expect(options).toEqual(['XY', 'ZZ'])
+  await userEvent.click(screen.getByRole('option', { name: 'ZZ' }))
+  expect(screen.getByLabelText('Project key 2')).toHaveValue('ZZ')
+})
+
+test('project key still accepts free text when cards cannot be loaded', async () => {
+  mockApi({
+    '/api/ai-config': { body: config },
+    '/api/cards': { status: 503, body: { detail: 'Jira is not configured' } },
+  })
+  render(<AiSettings />)
+  await screen.findByLabelText('Eligible Jira statuses')
+  await userEvent.type(screen.getByLabelText('Project key 1'), 'q')
+  expect(screen.getByLabelText('Project key 1')).toHaveValue('ABQ')
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
+test('browse picks a repo folder by navigating the server file tree', async () => {
+  mockApi({
+    '/api/ai-config': { body: config },
+    '/api/fs/dirs?path=%2Frepos%2Fab': { body: { path: '/repos/ab', parent: '/repos', dirs: [] } },
+    '/api/fs/dirs?path=%2Frepos': {
+      body: { path: '/repos', parent: '/', dirs: [{ name: 'ab', is_git: true }, { name: 'docs', is_git: false }] },
+    },
+  })
+  render(<AiSettings />)
+  await screen.findByLabelText('Eligible Jira statuses')
+  await userEvent.click(screen.getByRole('button', { name: 'Browse for repo 1' }))
+  expect(await screen.findByText('Choose a repository folder')).toBeVisible()
+  await userEvent.click(await screen.findByText('Up'))
+  await userEvent.click(await screen.findByText('docs'))
+  // docs listing is not mocked, so navigation reports an error and stays put
+  expect(await screen.findByRole('alert')).toBeVisible()
+  await userEvent.click(screen.getByRole('button', { name: 'Select this folder' }))
+  expect(screen.getByLabelText('Repo path 1')).toHaveValue('/repos')
 })

@@ -53,7 +53,7 @@ test('missing repo mapping links to AI settings and hides Generate', async () =>
   })
   renderDetail()
   expect(await screen.findByText(/No repo is configured for project AB/)).toBeInTheDocument()
-  expect(screen.getByRole('link', { name: 'AI Settings' })).toHaveAttribute('href', '/ai-settings')
+  expect(screen.getByRole('link', { name: 'AI Settings' })).toHaveAttribute('href', '/settings/ai')
   expect(screen.queryByRole('button', { name: 'Generate plan' })).not.toBeInTheDocument()
 })
 
