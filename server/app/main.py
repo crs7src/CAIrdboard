@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from pydantic import BaseModel, field_validator
 
-from app import jira, planner
+from app import implementer, jira, planner
 from app.ai_config import AiConfig, load_ai_config, save_ai_config
 from app.config import Settings, get_settings, save_credentials
 
@@ -279,3 +279,73 @@ def approve_plan(key: str, settings: SettingsDep) -> planner.Plan:
 @app.post("/api/cards/{key}/plan/reject")
 def reject_plan(key: str, settings: SettingsDep) -> planner.Plan:
     return _decide(settings, key, "rejected")
+
+
+def _repo_for_key(settings: Settings, key: str) -> str:
+    config = load_ai_config(settings.ai_config_file)
+    repo = config.repo_for(key.split("-")[0])
+    if repo is None or not Path(repo).is_dir():
+        raise HTTPException(422, "No valid repo is configured for this card's project")
+    return repo
+
+
+@app.post("/api/cards/{key}/implementation", status_code=202)
+async def start_implementation(
+    key: str,
+    settings: SettingsDep,
+    runner: RunnerDep,
+    background: BackgroundTasks,
+) -> implementer.Implementation:
+    """Implement the approved plan on a new branch in the project's repo."""
+    key = _valid_key(key)
+    plan = planner.PlanStore(settings.plans_dir).latest(key)
+    if plan is None or plan.state != "approved" or not plan.plan:
+        raise HTTPException(409, "Only an approved plan can be implemented")
+    card = await _load_card(settings, key)
+    repo = _repo_for_key(settings, key)
+
+    store = implementer.ImplementationStore(settings.implementations_dir)
+    previous = implementer.recover_stale(store, store.latest(key))
+    if key in implementer.ACTIVE or (previous and previous.state == "running"):
+        raise HTTPException(409, "This card is already being implemented")
+    if repo in implementer.ACTIVE_REPOS:
+        raise HTTPException(
+            409,
+            "Another implementation is running in this repo. Wait for it to finish.",
+        )
+
+    run = store.create(key, plan.version)
+    implementer.ACTIVE.add(key)
+    implementer.ACTIVE_REPOS.add(repo)
+    background.add_task(
+        implementer.run_implementation,
+        store,
+        run,
+        card,
+        plan.plan,
+        repo,
+        settings.copilot_command,
+        settings.implement_timeout_seconds,
+        runner,
+    )
+    return run
+
+
+@app.get("/api/cards/{key}/implementation")
+async def get_implementation(
+    key: str, settings: SettingsDep, runner: RunnerDep
+) -> implementer.Implementation:
+    key = _valid_key(key)
+    store = implementer.ImplementationStore(settings.implementations_dir)
+    run = implementer.recover_stale(store, store.latest(key))
+    if run is None:
+        raise HTTPException(404, "No implementation exists for this card")
+    if run.state == "running" and run.base_commit:
+        # Show commits as they land while the AI is still working.
+        try:
+            run.commits = await implementer.list_commits(
+                runner, _repo_for_key(settings, key), run.base_commit
+            )
+        except implementer.ImplementationError, HTTPException:
+            pass
+    return run

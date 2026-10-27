@@ -135,6 +135,25 @@ test('polls while running and renders the markdown plan when ready', async () =>
   expect(screen.queryByText('Generating plan...')).not.toBeInTheDocument()
 })
 
+test('implementation section appears only once the plan is approved', async () => {
+  mockApi({
+    '/api/cards/AB-1': { body: detail() },
+    '/api/cards/AB-1/plan': { body: plan({ state: 'ready' }) },
+  })
+  renderDetail()
+  await screen.findByTestId('plan-body')
+  expect(screen.queryByRole('heading', { name: 'Implementation' })).not.toBeInTheDocument()
+  vi.unstubAllGlobals()
+
+  mockApi({
+    '/api/cards/AB-1': { body: detail() },
+    '/api/cards/AB-1/plan': { body: plan({ state: 'approved' }) },
+    '/api/cards/AB-1/implementation': { status: 404, body: { detail: 'none' } },
+  })
+  renderDetail()
+  expect(await screen.findByRole('button', { name: 'Start implementation' })).toBeInTheDocument()
+})
+
 test('Approve records the decision', async () => {
   mockApi({
     '/api/cards/AB-1': { body: detail() },

@@ -15,6 +15,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { useCallback, useEffect, useState } from 'react'
 import Markdown from 'react-markdown'
 import { Link as RouterLink, useParams } from 'react-router-dom'
+import Implementation from './Implementation'
 import {
   decidePlan,
   fetchCardDetail,
@@ -200,6 +201,8 @@ export default function CardDetail() {
           </Button>
         </Stack>
       )}
+
+      {plan?.state === 'approved' && card.repo_configured && <Implementation cardKey={key} />}
 
       {canGenerate && !running && !plan && (
         <Box>

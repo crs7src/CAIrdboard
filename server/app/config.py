@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     plans_dir: Path = Path("data/plans")
     copilot_command: str = "copilot"
     plan_timeout_seconds: float = 900
+    implementations_dir: Path = Path("data/implementations")
+    implement_timeout_seconds: float = 3600
 
     @property
     def jira_configured(self) -> bool:

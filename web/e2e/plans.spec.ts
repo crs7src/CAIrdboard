@@ -58,6 +58,39 @@ async function mockBackend(page: Page, cardOver = {}) {
       return route.fulfill({ json: current })
     })
   }
+
+  let impl: Record<string, unknown> | null = null
+  let implPolls = 0
+  const implementation = (over = {}) => ({
+    card_key: 'AB-1',
+    version: 1,
+    plan_version: 1,
+    state: 'completed',
+    stage: 'done',
+    branch: 'AB-1_add_dark_mode',
+    base_branch: 'main',
+    base_commit: 'abc',
+    commits: [
+      { sha: 'aaa111', subject: 'AB-1: step 1 - add toggle' },
+      { sha: 'bbb222', subject: 'AB-1: step 2 - add tests' },
+    ],
+    notes: [],
+    report: '## Review against the plan\n\nAll steps matched',
+    error: null,
+    created_at: 't',
+    updated_at: 't',
+    ...over,
+  })
+  await page.route('**/api/cards/AB-1/implementation', (route) => {
+    if (route.request().method() === 'POST') {
+      impl = implementation({ state: 'running', stage: 'implementing', report: null, commits: [] })
+      implPolls = 0
+      return route.fulfill({ status: 202, json: impl })
+    }
+    if (!impl) return route.fulfill({ status: 404, json: { detail: 'No implementation exists' } })
+    if (impl.state === 'running' && ++implPolls >= 2) impl = implementation()
+    return route.fulfill({ json: impl })
+  })
   return { posts }
 }
 
@@ -79,6 +112,22 @@ test('generate, review and approve a plan for a card', async ({ page }) => {
   await page.getByRole('button', { name: 'Approve' }).click()
   await expect(page.getByText('approved', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Approve' })).toHaveCount(0)
+})
+
+test('approved plan can be implemented on a new branch with a review report', async ({ page }) => {
+  await mockBackend(page)
+  await page.goto('/cards/AB-1')
+  await expect(page.getByRole('button', { name: 'Start implementation' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Generate plan' }).click()
+  await expect(page.getByRole('heading', { name: 'Steps' })).toBeVisible({ timeout: 10_000 })
+  await page.getByRole('button', { name: 'Approve' }).click()
+
+  await page.getByRole('button', { name: 'Start implementation' }).click()
+  await expect(page.getByText('Implementing...')).toBeVisible()
+  await expect(page.getByText('AB-1: step 2 - add tests')).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText('AB-1_add_dark_mode')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Review against the plan' })).toBeVisible()
+  await expect(page.getByText('completed', { exact: true })).toBeVisible()
 })
 
 test('reject a plan and regenerate it with feedback', async ({ page }) => {

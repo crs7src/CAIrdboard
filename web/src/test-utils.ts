@@ -58,3 +58,21 @@ export const plan = (over: Record<string, unknown> = {}) => ({
   updated_at: 't',
   ...over,
 })
+
+export const implementation = (over: Record<string, unknown> = {}) => ({
+  card_key: 'AB-1',
+  version: 1,
+  plan_version: 1,
+  state: 'completed',
+  stage: 'done',
+  branch: 'AB-1_add_dark_mode',
+  base_branch: 'main',
+  base_commit: 'abc',
+  commits: [],
+  notes: [],
+  report: null,
+  error: null,
+  created_at: 't',
+  updated_at: 't',
+  ...over,
+})
