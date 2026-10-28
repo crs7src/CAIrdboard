@@ -326,3 +326,79 @@ def test_bash_times_out_and_caps_output(repo, monkeypatch):
     monkeypatch.setattr(tools, "BASH_TIMEOUT", 30)
     out = box.call("bash", {"command": "yes x | head -c 100000"})
     assert out.endswith("[output truncated]")
+
+
+def _tool_turn(*calls):
+    return httpx.Response(
+        200,
+        json={
+            "stop_reason": "tool_use",
+            "content": [
+                {"type": "tool_use", "id": f"t{i}", "name": n, "input": a}
+                for i, (n, a) in enumerate(calls)
+            ],
+        },
+    )
+
+
+@respx.mock
+async def test_agent_mode_offers_write_tools_and_runs_several_calls_per_turn(repo):
+    route = respx.post(ANTHROPIC).mock(
+        side_effect=[
+            _tool_turn(
+                ("create", {"path": "one.txt", "content": "1"}),
+                ("edit", {"path": "README.md", "old_str": "Title", "new_str": "New"}),
+                ("bash", {"command": "git --version"}),
+            ),
+            httpx.Response(
+                200,
+                json={
+                    "stop_reason": "end_turn",
+                    "content": [{"type": "text", "text": "done"}],
+                },
+            ),
+        ]
+    )
+    result = await AnthropicProvider("k", "m").run("P", str(repo), 30, "agent")
+    assert result.returncode == 0 and result.stdout == "done"
+    first = json.loads(route.calls[0].request.content)
+    assert [t["name"] for t in first["tools"]] == [
+        "view",
+        "grep",
+        "glob",
+        "edit",
+        "create",
+        "bash",
+    ]
+    results = json.loads(route.calls[1].request.content)["messages"][-1]["content"]
+    assert [r["tool_use_id"] for r in results] == ["t0", "t1", "t2"]
+    assert "git version" in results[2]["content"]
+    assert (repo / "one.txt").read_text() == "1"
+    assert (repo / "README.md").read_text() == "# New\n"
+
+
+@respx.mock
+async def test_plan_mode_stays_read_only(repo):
+    route = respx.post(ANTHROPIC).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "stop_reason": "end_turn",
+                "content": [{"type": "text", "text": "x"}],
+            },
+        )
+    )
+    await AnthropicProvider("k", "m").run("P", str(repo), 30, "plan")
+    names = [t["name"] for t in json.loads(route.calls[0].request.content)["tools"]]
+    assert names == ["view", "grep", "glob"]
+
+
+@respx.mock
+async def test_agent_iteration_cap_is_configurable(repo):
+    route = respx.post(ANTHROPIC).mock(
+        return_value=_tool_turn(("glob", {"pattern": "*"}))
+    )
+    provider = AnthropicProvider("k", "m", max_iterations=2, max_agent_iterations=5)
+    result = await provider.run("P", str(repo), 30, "agent")
+    assert route.call_count == 5
+    assert result.returncode == 1 and "5 tool steps" in result.stderr

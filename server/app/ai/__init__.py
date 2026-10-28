@@ -6,7 +6,7 @@ from typing import Literal, Protocol
 from app.stages.planner import CommandResult
 
 # What the call is for. The Copilot CLI picks its tool permissions from it.
-Mode = Literal["plan", "test", "summary"]
+Mode = Literal["plan", "test", "summary", "agent"]
 
 DEFAULT_PROVIDER = "copilot"
 
