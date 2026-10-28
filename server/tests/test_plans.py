@@ -165,6 +165,7 @@ def test_ai_config_endpoints_roundtrip(client, env):
         "eligible_statuses": ["Backlog"],
         "project_repos": {"XY": "/tmp"},
         "project_names": {},
+        "auto_review": True,
     }
     named = {**body, "project_names": {"xy": "Xy app"}}
     assert client.put("/api/ai-config", json=named).status_code == 200

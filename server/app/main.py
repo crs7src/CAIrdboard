@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections.abc import Awaitable
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -503,17 +504,54 @@ async def start_implementation(
     implementer.ACTIVE.add(key)
     implementer.ACTIVE_REPOS.add(repo)
     background.add_task(
-        implementer.run_implementation,
+        _implement_then_review,
+        settings,
+        runner,
         store,
         run,
         card,
         plan.plan,
         repo,
+    )
+    return run
+
+
+async def _implement_then_review(
+    settings: Settings,
+    runner: object,
+    store: implementer.ImplementationStore,
+    run: implementer.Implementation,
+    card: jira.Card,
+    plan_text: str,
+    repo: str,
+) -> None:
+    await implementer.run_implementation(
+        store,
+        run,
+        card,
+        plan_text,
+        repo,
         settings.copilot_command,
         settings.implement_timeout_seconds,
         runner,
     )
-    return run
+    # The implementer has released the card and repo by now. The setting is
+    # read here so a change made while the run was going is honoured.
+    try:
+        latest = store.latest(run.card_key)
+        if (
+            latest is None
+            or latest.version != run.version
+            or latest.state != "completed"
+            or not load_ai_config(settings.ai_config_file).auto_review
+        ):
+            return
+        _, args = await _prepare_review(run.card_key, settings, runner)
+        await reviewer.run_review(*args)
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "Automatic review of %s was not started", run.card_key, exc_info=True
+        )
 
 
 @app.get("/api/cards/{key}/implementation")
