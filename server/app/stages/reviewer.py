@@ -16,6 +16,7 @@ from app.stages.implementer import (
     ImplementationError,
     _git,
     list_commits,
+    run_agent,
 )
 from app.stages.planner import (
     CommandNotFound,
@@ -157,6 +158,7 @@ async def run_review(
     command: str,
     timeout: float,
     runner=run_command,
+    provider=None,
 ) -> None:
     """Review the card's branch in a fresh AI session and record the outcome. Never raises."""
     try:
@@ -168,10 +170,14 @@ async def run_review(
             )
         await _git(runner, repo, "checkout", branch)
         run.head_before = await _git(runner, repo, "rev-parse", "HEAD")
+        if provider is not None:
+            run.provider = provider.id
         store.save(run)
 
         prompt = build_prompt(card, plan_text, impl, skill)
-        result = await runner(build_args(command, prompt), repo, timeout)
+        result = await run_agent(
+            runner, command, provider, prompt, repo, timeout, build_args
+        )
         run.fix_commits = await list_commits(runner, repo, run.head_before)
 
         current = await _git(runner, repo, "rev-parse", "--abbrev-ref", "HEAD")
