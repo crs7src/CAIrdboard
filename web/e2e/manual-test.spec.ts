@@ -102,7 +102,8 @@ test('start the manual test, open a link, and stop the app', async ({ page }) =>
   await page.goto('/cards/AB-1')
   await page.getByRole('button', { name: /^Test not started/ }).click()
   await expect(page.getByRole('button', { name: 'Start test', exact: true })).toBeDisabled()
-  await page.getByRole('button', { name: 'Start with AI' }).click()
+  await page.getByRole('button', { name: 'Start with AI / app startup issues' }).click()
+  await page.getByRole('button', { name: 'Start with AI', exact: true }).click()
   await expect(page.getByText(/Working out how to run the app/)).toBeVisible()
 
   const link = page.getByRole('link', { name: 'Settings page' })
@@ -228,11 +229,85 @@ test('saved settings are used, and a problem report restarts with the fix', asyn
   await expect(page.getByText(/saved settings \(no AI used\)/)).toBeVisible()
   expect(posts[0]).toEqual({ url: 'start', body: null })
 
-  await page.getByLabel('Describe what is not running right').fill('login is blank')
-  await page.getByRole('button', { name: 'Send problem report' }).click()
+  await page.getByRole('button', { name: 'Start with AI / app startup issues' }).click()
+  await page.getByLabel('Report an issue with the app startup').fill('login is blank')
+  await page.getByRole('button', { name: 'Send startup issue report' }).click()
   await expect(page.getByText('Reported problem: login is blank')).toBeVisible({ timeout: 15_000 })
   expect(posts[1]).toEqual({ url: 'problem', body: { message: 'login is blank' } })
 
   await page.getByRole('button', { name: 'Forget saved settings' }).click()
   await expect(page.getByText('saved settings', { exact: true })).toHaveCount(0)
+})
+
+test('issues found while testing are sent to the code fixer', async ({ page }) => {
+  let fix: Record<string, unknown> | null = null
+  let sent: unknown = null
+  const run = {
+    ...base, review_version: 1, branch: 'AB-1_x', notes: [], report: null, error: null, problem: null,
+    state: 'running', source: 'saved', apps: [], links: [],
+  }
+  await page.route('**/api/cards', (route) => route.fulfill({ json: [card] }))
+  await page.route('**/api/cards/AB-1', (route) => route.fulfill({ json: card }))
+  await page.route('**/api/ai-config', (route) =>
+    route.fulfill({ json: { eligible_statuses: ['DEV In Progress'], project_repos: { AB: '/r' } } }),
+  )
+  await page.route('**/api/plans', (route) => route.fulfill({ json: { 'AB-1': 'approved' } }))
+  await page.route('**/api/implementations', (route) => route.fulfill({ json: { 'AB-1': 'completed' } }))
+  await page.route('**/api/reviews', (route) => route.fulfill({ json: { 'AB-1': 'clean' } }))
+  await page.route('**/api/tests', (route) => route.fulfill({ json: { 'AB-1': 'running' } }))
+  await page.route('**/api/test-configs', (route) => route.fulfill({ json: ['AB'] }))
+  await page.route('**/api/test-approvals', (route) => route.fulfill({ json: [] }))
+  await page.route('**/api/merge-requests', (route) => route.fulfill({ json: {} }))
+  await page.route('**/api/cards/AB-1/merge-request', (route) =>
+    route.fulfill({ status: 404, json: { detail: 'none' } }),
+  )
+  await page.route('**/api/repo-hosts/AB', (route) =>
+    route.fulfill({ json: { project: 'AB', repo: '/r', provider: 'gitlab', path: 'grp/app', source: 'origin', detected: null } }),
+  )
+  await page.route('**/api/cards/AB-1/plan', (route) =>
+    route.fulfill({ json: { ...base, state: 'approved', plan: '1. Do it', error: null, history: [], feedback: null } }),
+  )
+  await page.route('**/api/cards/AB-1/implementation', (route) =>
+    route.fulfill({
+      json: {
+        ...base, plan_version: 1, state: 'completed', stage: 'done', branch: 'AB-1_x', base_branch: 'main',
+        base_commit: 'abc', commits: [], notes: [], report: null, error: null,
+      },
+    }),
+  )
+  await page.route('**/api/cards/AB-1/review', (route) =>
+    route.fulfill({
+      json: {
+        ...base, implementation_version: 1, state: 'clean', branch: 'AB-1_x', base_commit: 'abc',
+        head_before: 'def', fix_commits: [], notes: [], report: null, error: null,
+      },
+    }),
+  )
+  await page.route('**/api/cards/AB-1/test/config', (route) =>
+    route.fulfill({ status: 404, json: { detail: 'none' } }),
+  )
+  await page.route('**/api/cards/AB-1/test/approval', (route) =>
+    route.fulfill({ json: { approved: false, approved_at: null } }),
+  )
+  await page.route('**/api/cards/AB-1/test', (route) => route.fulfill({ json: run }))
+  await page.route('**/api/cards/AB-1/feedback', (route) => {
+    if (fix?.state === 'running') fix = { ...fix, state: 'done' }
+    return route.fulfill({ json: { comments: [], run: fix } })
+  })
+  await page.route('**/api/cards/AB-1/test/feedback', (route) => {
+    sent = route.request().postDataJSON()
+    fix = {
+      card_key: 'AB-1', version: 1, state: 'running', branch: 'AB-1_x', comments: [], commits: [],
+      notes: [], report: null, error: null, created_at: 't', updated_at: 't',
+    }
+    return route.fulfill({ status: 202, json: fix })
+  })
+
+  await page.goto('/cards/AB-1')
+  await page.getByRole('button', { name: /^Test app running/ }).click()
+  await page.getByLabel('Issues', { exact: true }).fill('the save button does nothing')
+  await page.getByRole('button', { name: 'Send to code fixer' }).click()
+  await expect(page.getByText(/An AI is fixing the reported issues/)).toBeVisible()
+  expect(sent).toEqual({ message: 'the save button does nothing' })
+  await expect(page.getByText(/Fixes made/)).toBeVisible({ timeout: 15_000 })
 })
