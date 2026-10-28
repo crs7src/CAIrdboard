@@ -13,6 +13,7 @@ from app.deps import (
     _implementation_states,
     _repo_for_key,
     _valid_key,
+    agent_provider_for,
     provider_for,
 )
 from app.integrations import jira
@@ -54,7 +55,11 @@ async def start_implementation(
             "Another implementation is running in this repo. Wait for it to finish.",
         )
 
-    provider = provider_for(settings, runner, card.project)
+    provider = agent_provider_for(settings, runner, card.project)
+    try:
+        summary_provider = provider_for(settings, runner, card.project)
+    except HTTPException:
+        summary_provider = None  # only names the branch; Copilot does it instead
     run = store.create(key, plan.version)
     implementer.ACTIVE.add(key)
     implementer.ACTIVE_REPOS.add(repo)
@@ -68,6 +73,7 @@ async def start_implementation(
         plan.plan,
         repo,
         provider,
+        summary_provider,
     )
     return run
 
@@ -81,6 +87,7 @@ async def _implement_then_review(
     plan_text: str,
     repo: str,
     provider: object = None,
+    summary_provider: object = None,
 ) -> None:
     await implementer.run_implementation(
         store,
@@ -91,7 +98,7 @@ async def _implement_then_review(
         settings.copilot_command,
         settings.implement_timeout_seconds,
         runner,
-        provider,
+        summary_provider,
         provider,
     )
     await _auto_review(settings, runner, run.card_key, run.version, store)

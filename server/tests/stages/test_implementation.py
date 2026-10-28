@@ -616,7 +616,7 @@ def test_implementation_without_the_api_key_is_503(client, env, ai):
         tmp_path / "ai.json",
         AiConfig(
             project_repos={"AB": str(work)},
-            default_provider="gemini",
+            default_provider="anthropic",
             auto_review=False,
         ),
     )
@@ -625,3 +625,26 @@ def test_implementation_without_the_api_key_is_503(client, env, ai):
     response = client.post("/api/cards/AB-1/implementation")
     assert response.status_code == 503
     assert implementer.ImplementationStore(db()).latest("AB-1") is None
+
+
+@respx.mock
+def test_implementation_stays_on_copilot_for_a_provider_that_cannot_edit(
+    client, env, ai
+):
+    tmp_path, work = env
+    save_ai_config(
+        tmp_path / "ai.json",
+        AiConfig(
+            project_repos={"AB": str(work)},
+            default_provider="gemini",
+            auto_review=False,
+        ),
+    )
+    mock_jira()
+    approve_plan(tmp_path)
+    assert client.post("/api/cards/AB-1/implementation").status_code == 202
+    body = client.get("/api/cards/AB-1/implementation").json()
+    assert body["state"] == "completed", body["error"]
+    assert body["provider"] == "copilot"
+    assert body["branch"] == "AB-1_add_dark_mode"
+    assert "--allow-all-tools" in ai.implement_call

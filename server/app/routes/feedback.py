@@ -10,7 +10,7 @@ from app.deps import (
     _db,
     _repo_for_key,
     _valid_key,
-    provider_for,
+    agent_provider_for,
 )
 from app.routes.cards import _load_card
 from app.routes.implementations import _feedback_then_review
@@ -120,7 +120,7 @@ def _start_feedback(
 ) -> feedback.FeedbackRun:
     """Check the card and repo are free, then start a run on the pending comments."""
     key = card.key
-    provider = provider_for(settings, runner, card.project)
+    provider = agent_provider_for(settings, runner, card.project)
     _check_feedback_idle(store, key)
     if repo in implementer.ACTIVE_REPOS:
         raise HTTPException(

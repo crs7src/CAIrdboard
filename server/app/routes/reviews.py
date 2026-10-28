@@ -10,7 +10,7 @@ from app.deps import (
     _repo_for_key,
     _states,
     _valid_key,
-    provider_for,
+    agent_provider_for,
 )
 from app.routes.cards import _load_card
 from app.stages import implementer, planner, reviewer
@@ -41,7 +41,7 @@ async def _prepare_review(
         raise HTTPException(409, "The card has no plan to review against")
     card = await _load_card(settings, key)
     repo = _repo_for_key(settings, key)
-    provider = provider_for(settings, runner, card.project)
+    provider = agent_provider_for(settings, runner, card.project)
 
     store = reviewer.ReviewStore(_db(settings))
     previous = reviewer.recover_stale(store, store.latest(key))
