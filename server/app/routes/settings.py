@@ -24,6 +24,13 @@ def put_ai_config(config: AiConfig, settings: SettingsDep) -> AiConfig:
         config.project_names = load_ai_config(settings.ai_config_file).project_names
     if "auto_review" not in config.model_fields_set:
         config.auto_review = load_ai_config(settings.ai_config_file).auto_review
+    saved = load_ai_config(settings.ai_config_file)
+    for field in ("default_provider", "project_providers", "provider_models"):
+        if field not in config.model_fields_set:
+            setattr(config, field, getattr(saved, field))
+    config.project_providers = {
+        k: p for k, p in config.project_providers.items() if k in config.project_repos
+    }
     config.project_names = {
         k: n for k, n in config.project_names.items() if k in config.project_repos
     }

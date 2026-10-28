@@ -3,7 +3,13 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException
 
-from app.ai import AiProvider, ProviderNotConfigured, make_provider, resolve_provider_id
+from app.ai import (
+    AiProvider,
+    ProviderNotConfigured,
+    make_provider,
+    model_for,
+    resolve_provider_id,
+)
 from app.core.ai_config import load_ai_config
 from app.core.config import (
     Settings,
@@ -70,6 +76,8 @@ def provider_for(settings: Settings, runner, project: str) -> AiProvider:
     """The AI provider chosen for a project; 503 when it has no API key yet."""
     config = load_ai_config(settings.ai_config_file)
     try:
-        return make_provider(resolve_provider_id(config, project), settings, runner)
+        provider_id = resolve_provider_id(config, project)
+        model = model_for(config, provider_id)
+        return make_provider(provider_id, settings, runner, model)
     except ProviderNotConfigured as e:
         raise HTTPException(503, str(e)) from e
