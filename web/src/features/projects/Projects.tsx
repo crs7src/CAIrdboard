@@ -237,7 +237,7 @@ function ProjectForm({ project, onClose, onSaved }: FormProps) {
             label="AI provider"
             value={aiProvider}
             onChange={(e) => setAiProvider(e.target.value as AiProviderId | '')}
-            helperText="Used for plans and manual test setup. Implement, review and feedback always use GitHub Copilot CLI for now."
+            helperText="Anthropic runs every stage; Google Gemini only plans and sets up manual tests (implement, review and feedback use GitHub Copilot CLI)."
             slotProps={{ select: { displayEmpty: true } }}
           >
             <MenuItem value="">

@@ -4,7 +4,7 @@ test('save an Anthropic key, and the card page shows which AI made the plan', as
   let configured = false
   const providers = () => [
     { id: 'copilot', label: 'GitHub Copilot CLI', configured: true, model: null, default_model: null, models: [], needs_key: false, supports_agent: true, is_default: true },
-    { id: 'anthropic', label: 'Anthropic', configured, model: null, default_model: 'claude-sonnet-4-5', models: ['claude-sonnet-4-5'], needs_key: true, supports_agent: false, is_default: false },
+    { id: 'anthropic', label: 'Anthropic', configured, model: null, default_model: 'claude-sonnet-4-5', models: ['claude-sonnet-4-5'], needs_key: true, supports_agent: true, is_default: false },
     { id: 'gemini', label: 'Google Gemini', configured: false, model: null, default_model: 'gemini-2.5-pro', models: ['gemini-2.5-pro'], needs_key: true, supports_agent: false, is_default: false },
   ]
   let saved: Record<string, unknown> | null = null
