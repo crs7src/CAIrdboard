@@ -155,7 +155,38 @@ def _valid_key(key: str) -> str:
     return key
 
 
+async def _link_issue_repos(settings: Settings, cards: list[jira.Card]) -> None:
+    """Map a GitHub issue's project to the local repo whose origin is that GitHub repo,
+    so its plans can run there without a manual mapping."""
+    config = load_ai_config(settings.ai_config_file)
+    pending = {
+        c.project: c.external_repo.lower()
+        for c in cards
+        if c.source == "github" and c.external_repo and not config.repo_for(c.project)
+    }
+    if not pending:
+        return
+    origins: dict[str, str | None] = {}
+    for repo in dict.fromkeys(config.project_repos.values()):
+        remote = await remotes.origin_remote(repo)
+        origins[repo] = remote[1].lower() if remote else None
+    changed = False
+    for project, wanted in pending.items():
+        repo = next((r for r, path in origins.items() if path == wanted), None)
+        if repo:
+            config.project_repos[project] = repo
+            changed = True
+    if changed:
+        save_ai_config(settings.ai_config_file, config)
+
+
 async def _load_card(settings: Settings, key: str) -> jira.Card:
+    card = await _fetch_card(settings, key)
+    await _link_issue_repos(settings, [card])
+    return card
+
+
+async def _fetch_card(settings: Settings, key: str) -> jira.Card:
     github_issue = github.is_issue_key(key)
     if github_issue and not settings.github_configured:
         raise HTTPException(
@@ -205,6 +236,7 @@ async def cards(settings: SettingsDep, response: Response) -> list[jira.Card]:
             raise result
     if errors and len(errors) == len(results):
         raise HTTPException(502, "; ".join(errors))
+    await _link_issue_repos(settings, found)
     if errors:
         response.headers["X-Card-Warnings"] = "; ".join(errors)
     return found
@@ -216,7 +248,7 @@ async def card_detail(key: str, settings: SettingsDep) -> CardDetail:
     config = load_ai_config(settings.ai_config_file)
     return CardDetail(
         **card.model_dump(),
-        eligible=config.is_eligible(card.status),
+        eligible=config.is_eligible(card.status, card.source),
         repo_configured=config.repo_for(card.project) is not None,
     )
 
@@ -350,7 +382,7 @@ async def create_plan(
     key = _valid_key(key)
     card = await _load_card(settings, key)
     config = load_ai_config(settings.ai_config_file)
-    if not config.is_eligible(card.status):
+    if not config.is_eligible(card.status, card.source):
         raise HTTPException(
             409, f"Plans are not generated for cards in status '{card.status}'"
         )

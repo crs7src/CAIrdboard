@@ -12,7 +12,6 @@ DEFAULT_ELIGIBLE_STATUSES = [
     "To Do",
     "In Progress",
     "Reopened",
-    "Open",
 ]
 
 
@@ -44,7 +43,10 @@ class AiConfig(BaseModel):
             cleaned[key] = path
         return cleaned
 
-    def is_eligible(self, status: str) -> bool:
+    def is_eligible(self, status: str, source: str = "jira") -> bool:
+        # An open GitHub issue is always plannable; its only other state is Closed.
+        if source == "github" and status == "Open":
+            return True
         wanted = status.strip().casefold()
         return any(s.casefold() == wanted for s in self.eligible_statuses)
 
