@@ -162,8 +162,12 @@ async def _existing_branch(runner, repo: str, key: str) -> str | None:
     return names[0] if names else None
 
 
+def summary_args(command: str, prompt: str) -> list[str]:
+    return [command, "-s", "-p", prompt, "--available-tools", *READ_ONLY_TOOLS]
+
+
 async def summarize_change(
-    runner, command: str, repo: str, card: Card, plan_text: str
+    runner, command: str, repo: str, card: Card, plan_text: str, provider=None
 ) -> str:
     """Ask the AI for a few words describing the change; fall back to the card title."""
     prompt = (
@@ -171,9 +175,11 @@ async def summarize_change(
         "by this plan, suitable for a git branch name. No punctuation, no quotes, no "
         f"explanation.\n\nCard: {card.key} - {card.summary}\n\nPlan:\n{plan_text}"
     )
-    args = [command, "-s", "-p", prompt, "--available-tools", *READ_ONLY_TOOLS]
     try:
-        result = await runner(args, repo, SUMMARY_TIMEOUT)
+        if provider is not None:
+            result = await provider.run(prompt, repo, SUMMARY_TIMEOUT, "summary")
+        else:
+            result = await runner(summary_args(command, prompt), repo, SUMMARY_TIMEOUT)
         if result.returncode == 0:
             first_line = (result.stdout.strip().splitlines() or [""])[0]
             slug = slugify(first_line)
@@ -185,7 +191,13 @@ async def summarize_change(
 
 
 async def prepare_branch(
-    runner, command: str, repo: str, card: Card, plan_text: str, run: Implementation
+    runner,
+    command: str,
+    repo: str,
+    card: Card,
+    plan_text: str,
+    run: Implementation,
+    summary_provider=None,
 ) -> None:
     """Check out a clean branch for the card, recording what happened on `run`."""
     if not await _git_ok(runner, repo, "rev-parse", "--is-inside-work-tree"):
@@ -216,7 +228,9 @@ async def prepare_branch(
         )
     run.base_branch = base
 
-    slug = await summarize_change(runner, command, repo, card, plan_text)
+    slug = await summarize_change(
+        runner, command, repo, card, plan_text, summary_provider
+    )
     name = branch_name(card.key, slug)
     if not await _git_ok(runner, repo, "check-ref-format", "--branch", name):
         name = card.key
@@ -308,11 +322,14 @@ async def run_implementation(
     command: str,
     timeout: float,
     runner=run_command,
+    summary_provider=None,
 ) -> None:
     """Prepare the branch, run the AI, and record the outcome. Never raises."""
     try:
         skill = load_skill()
-        await prepare_branch(runner, command, repo, card, plan_text, run)
+        await prepare_branch(
+            runner, command, repo, card, plan_text, run, summary_provider
+        )
         run.stage = "implementing"
         store.save(run)
 

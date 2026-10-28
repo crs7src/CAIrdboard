@@ -206,11 +206,15 @@ async def generate(
     command: str,
     timeout: float,
     runner=run_command,
+    provider=None,
 ) -> None:
     """Run the AI and record the outcome on the plan. Never raises."""
     try:
         prompt = build_prompt(card, previous, plan.feedback)
-        result = await runner(build_args(command, prompt), repo, timeout)
+        if provider is not None:
+            result = await provider.run(prompt, repo, timeout, "plan")
+        else:
+            result = await runner(build_args(command, prompt), repo, timeout)
         output = result.stdout.strip()
         if result.returncode != 0 or not output:
             plan.state = "failed"
@@ -221,8 +225,8 @@ async def generate(
             plan.state, plan.plan = "ready", output
     except CommandTimeout:
         plan.state, plan.error = "failed", f"Timed out after {int(timeout)}s"
-    except CommandNotFound:
-        plan.state, plan.error = "failed", f"Command not found: {command}"
+    except CommandNotFound as e:
+        plan.state, plan.error = "failed", f"Command not found: {e or command}"
     except Exception as e:  # noqa: BLE001 - record any failure on the plan
         plan.state, plan.error = "failed", f"Unexpected error: {e}"
     finally:

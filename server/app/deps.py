@@ -3,6 +3,7 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException
 
+from app.ai import AiProvider, ProviderNotConfigured, make_provider, resolve_provider_id
 from app.core.ai_config import load_ai_config
 from app.core.config import (
     Settings,
@@ -63,3 +64,12 @@ def _repo_for_key(settings: Settings, key: str) -> str:
     if repo is None or not Path(repo).is_dir():
         raise HTTPException(422, "No valid repo is configured for this card's project")
     return repo
+
+
+def provider_for(settings: Settings, runner, project: str) -> AiProvider:
+    """The AI provider chosen for a project; 503 when it has no API key yet."""
+    config = load_ai_config(settings.ai_config_file)
+    try:
+        return make_provider(resolve_provider_id(config, project), settings, runner)
+    except ProviderNotConfigured as e:
+        raise HTTPException(503, str(e)) from e

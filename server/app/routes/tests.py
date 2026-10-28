@@ -17,6 +17,7 @@ from app.deps import (
     _states,
     _test_store,
     _valid_key,
+    provider_for,
 )
 from app.routes.cards import _load_card
 from app.routes.feedback import _check_feedback_idle, _start_feedback
@@ -126,6 +127,7 @@ async def start_test(
             "No start settings are configured for this project. Set them under "
             "Settings > Test apps, or use AI start.",
         )
+    provider = None if saved else provider_for(settings, runner, card.project)
     run = store.create(key, impl, review.version, "saved" if saved else "ai")
     tester.ACTIVE.add(key)
     implementer.ACTIVE_REPOS.add(repo)
@@ -144,6 +146,7 @@ async def start_test(
         configs=configs,
         saved=saved.apps if saved else None,
         previous=previous,
+        provider=provider,
     )
     return run
 
@@ -163,6 +166,7 @@ async def report_test_problem(
     previous = tester.recover_stale(store, store.latest(key))
     if previous is None:
         raise HTTPException(409, "Start the test before reporting a problem")
+    provider = provider_for(settings, runner, card.project)
     _check_test_free(key, repo, previous, stoppable=True)
     if key in tester.APPS:
         await tester.stop_app(store, key)
@@ -188,6 +192,7 @@ async def report_test_problem(
         saved=saved.apps if saved else None,
         problem=body.message,
         previous=previous,
+        provider=provider,
     )
     return run
 
