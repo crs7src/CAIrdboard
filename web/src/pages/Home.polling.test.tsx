@@ -110,6 +110,17 @@ test('polling stops once nothing is active', async () => {
   expect(fetchMock.mock.calls.filter(([u]) => u === '/api/cards')).toHaveLength(1)
 })
 
+test('a failed implementation shows an error-coloured chip', async () => {
+  mockApi({
+    ...base,
+    '/api/plans': { body: { 'AB-1': 'approved' } },
+    '/api/implementations': { body: { 'AB-1': 'failed' } },
+  })
+  renderHome()
+  const chip = await screen.findByText('Implementation: failed')
+  expect(chip.closest('.MuiChip-root')).toHaveClass('MuiChip-colorError')
+})
+
 test('a failed start shows the error and no spinner', async () => {
   mockApi({
     ...base,

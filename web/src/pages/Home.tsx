@@ -292,26 +292,39 @@ export default function Home() {
                 <Chip
                   label={`Test: ${approvals.includes(card.key) ? 'approved' : (tests[card.key] ?? 'available')}`}
                   size="small"
-                  color={approvals.includes(card.key) ? 'success' : tests[card.key] ? undefined : 'primary'}
+                  color={
+                    approvals.includes(card.key)
+                      ? 'success'
+                      : tests[card.key] === 'failed'
+                        ? 'error'
+                        : tests[card.key]
+                          ? undefined
+                          : 'primary'
+                  }
                   variant="outlined"
                 />
               ) : plans[card.key] === 'approved' && impls[card.key] === 'completed' ? (
                 <Chip
                   label={`Review: ${reviews[card.key] ?? 'available'}`}
                   size="small"
-                  color={reviews[card.key] ? undefined : 'primary'}
+                  color={reviews[card.key] === 'failed' ? 'error' : reviews[card.key] ? undefined : 'primary'}
                   variant="outlined"
                 />
               ) : plans[card.key] === 'approved' ? (
                 <Chip
                   label={`Implementation: ${impls[card.key] ?? 'available'}`}
                   size="small"
-                  color={impls[card.key] ? undefined : 'primary'}
+                  color={impls[card.key] === 'failed' ? 'error' : impls[card.key] ? undefined : 'primary'}
                   variant="outlined"
                 />
               ) : (
                 plans[card.key] && (
-                  <Chip label={`Plan: ${plans[card.key]}`} size="small" variant="outlined" />
+                  <Chip
+                    label={`Plan: ${plans[card.key]}`}
+                    size="small"
+                    color={plans[card.key] === 'failed' ? 'error' : undefined}
+                    variant="outlined"
+                  />
                 )
               )}
               {!plans[card.key] && isEligible(config, card.status, card.source) && (
