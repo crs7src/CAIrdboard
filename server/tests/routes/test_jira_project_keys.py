@@ -102,3 +102,15 @@ async def test_warm_up_swallows_jira_failure(env, monkeypatch):
     monkeypatch.setattr(jira, "fetch_assigned_cards", fail)
     await warm_jira_projects()
     assert JiraProjects(db()).keys() == []
+
+
+def test_endpoint_lists_unconfigured_keys_without_calling_jira(env, jira_cards):
+    from app.core.ai_config import AiConfig, save_ai_config
+
+    with TestClient(app) as client:
+        assert client.get("/api/jira-project-keys").json() == []
+        JiraProjects(db()).remember(["ZZ", "AB", "CD"])
+        save_ai_config(env / "ai.json", AiConfig(project_repos={"CD": str(env)}))
+        assert client.get("/api/jira-project-keys").json() == ["AB", "ZZ"]
+    assert jira_cards["calls"] == 0
+    assert JiraProjects(db()).keys() == ["AB", "CD", "ZZ"]
