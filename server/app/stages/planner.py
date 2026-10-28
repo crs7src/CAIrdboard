@@ -27,6 +27,8 @@ class Plan(BaseModel):
     feedback: str | None = None
     plan: str | None = None
     error: str | None = None
+    # Which AI wrote it; older plans predate the choice and were Copilot.
+    provider: str = "copilot"
     created_at: str
     updated_at: str
 
@@ -176,7 +178,13 @@ class PlanStore(RunStore[Plan]):
     kind = "plan"
     model = Plan
 
-    def create(self, key: str, jira_status: str, feedback: str | None) -> Plan:
+    def create(
+        self,
+        key: str,
+        jira_status: str,
+        feedback: str | None,
+        provider: str = "copilot",
+    ) -> Plan:
         def build(version: int, stamp: str):
             plan = Plan(
                 card_key=key,
@@ -184,6 +192,7 @@ class PlanStore(RunStore[Plan]):
                 state="running",
                 jira_status=jira_status,
                 feedback=feedback,
+                provider=provider,
                 created_at=stamp,
                 updated_at=stamp,
             )

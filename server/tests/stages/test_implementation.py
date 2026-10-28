@@ -544,3 +544,55 @@ def test_refused_auto_review_keeps_the_implementation_completed(
     assert client.post("/api/cards/AB-1/implementation").status_code == 202
     assert client.get("/api/cards/AB-1/implementation").json()["state"] == "completed"
     assert reviewer.ReviewStore(db()).latest("AB-1") is None
+
+
+@respx.mock
+def test_implementation_stays_on_copilot_whatever_the_project_provider(
+    client, env, ai, monkeypatch
+):
+    tmp_path, work = env
+    save_ai_config(
+        tmp_path / "ai.json",
+        AiConfig(
+            project_repos={"AB": str(work)},
+            project_providers={"AB": "anthropic"},
+            auto_review=False,
+        ),
+    )
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "ant-key")
+    api = respx.post("https://api.anthropic.com/v1/messages").respond(
+        json={
+            "stop_reason": "end_turn",
+            "content": [{"type": "text", "text": "api summary"}],
+        }
+    )
+    mock_jira()
+    approve_plan(tmp_path)
+
+    assert client.post("/api/cards/AB-1/implementation").status_code == 202
+    body = client.get("/api/cards/AB-1/implementation").json()
+    assert body["state"] == "completed", body["error"]
+    assert body["provider"] == "copilot"
+    # Only the branch name came from the provider; the implementation ran on Copilot.
+    assert body["branch"] == "AB-1_api_summary"
+    assert api.call_count == 1
+    assert len(ai.ai_calls) == 1 and "--allow-all-tools" in ai.implement_call
+
+
+@respx.mock
+def test_implementation_does_not_need_the_api_key_for_the_summary(client, env, ai):
+    tmp_path, work = env
+    save_ai_config(
+        tmp_path / "ai.json",
+        AiConfig(
+            project_repos={"AB": str(work)},
+            default_provider="gemini",
+            auto_review=False,
+        ),
+    )
+    mock_jira()
+    approve_plan(tmp_path)
+    assert client.post("/api/cards/AB-1/implementation").status_code == 202
+    body = client.get("/api/cards/AB-1/implementation").json()
+    assert body["state"] == "completed", body["error"]
+    assert body["branch"] == "AB-1_add_dark_mode"

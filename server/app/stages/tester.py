@@ -151,6 +151,8 @@ class TestRun(BaseModel):
     notes: list[str] = []
     report: str | None = None
     error: str | None = None
+    # The AI that worked out the apps; None when saved settings were used.
+    provider: str | None = None
     created_at: str
     updated_at: str
 
@@ -191,6 +193,7 @@ class TestStore(RunStore[TestRun]):
         review_version: int,
         source: TestSource = "ai",
         problem: str | None = None,
+        provider: str | None = None,
     ) -> TestRun:
         def build(version: int, stamp: str):
             run = TestRun(
@@ -200,6 +203,7 @@ class TestStore(RunStore[TestRun]):
                 state="preparing",
                 source=source,
                 problem=problem,
+                provider=provider,
                 branch=impl.branch,
                 created_at=stamp,
                 updated_at=stamp,

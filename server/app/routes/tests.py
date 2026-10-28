@@ -128,7 +128,13 @@ async def start_test(
             "Settings > Test apps, or use AI start.",
         )
     provider = None if saved else provider_for(settings, runner, card.project)
-    run = store.create(key, impl, review.version, "saved" if saved else "ai")
+    run = store.create(
+        key,
+        impl,
+        review.version,
+        "saved" if saved else "ai",
+        provider=provider.id if provider else None,
+    )
     tester.ACTIVE.add(key)
     implementer.ACTIVE_REPOS.add(repo)
     background.add_task(
@@ -173,7 +179,14 @@ async def report_test_problem(
 
     configs = tester.ConfigStore(_db(settings))
     saved = configs.load(tester.project_of(key))
-    run = store.create(key, impl, review.version, "feedback", body.message)
+    run = store.create(
+        key,
+        impl,
+        review.version,
+        "feedback",
+        body.message,
+        provider=provider.id,
+    )
     tester.ACTIVE.add(key)
     implementer.ACTIVE_REPOS.add(repo)
     background.add_task(

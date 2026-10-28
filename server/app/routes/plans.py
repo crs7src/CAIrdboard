@@ -68,7 +68,7 @@ async def create_plan(
         raise HTTPException(409, "A plan is already being generated for this card")
 
     feedback = body.feedback if body else None
-    plan = store.create(key, card.status, feedback)
+    plan = store.create(key, card.status, feedback, provider.id)
     planner.ACTIVE.add(key)
     background.add_task(
         planner.generate,

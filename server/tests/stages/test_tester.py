@@ -742,3 +742,38 @@ def test_api_test_feedback_conflicts(client, env, ai):
     implementer.ACTIVE_REPOS.clear()
     assert client.get("/api/cards/AB-1/feedback").json()["comments"] == []
     assert ai.ai_calls == []
+
+
+class FakeProvider:
+    id = "anthropic"
+    label = "Anthropic"
+
+    def __init__(self, stdout, returncode=0, stderr=""):
+        self.result = CommandResult(returncode, stdout, stderr)
+        self.calls: list[tuple[str, str, str]] = []
+
+    async def run(self, prompt, cwd, timeout, mode="plan"):
+        self.calls.append((prompt, cwd, mode))
+        return self.result
+
+
+async def test_apps_can_come_from_an_api_provider_instead_of_the_cli(env):
+    tmp_path, work = env
+    cli = FakeTester("must not be used")
+    provider = FakeProvider(reply(free_port()))
+    store, run = await run_it(tmp_path, work, cli, provider=provider)
+    try:
+        assert run.state == "running", run.error
+        assert cli.ai_calls == []
+        prompt, cwd, mode = provider.calls[0]
+        assert "AB-1 - Add a dark mode toggle" in prompt
+        assert (cwd, mode) == (str(work), "test")
+    finally:
+        await tester.stop_app(store, "AB-1")
+
+
+async def test_api_provider_failure_is_recorded_on_the_run(env):
+    tmp_path, work = env
+    provider = FakeProvider("", returncode=1, stderr="Anthropic rate limit reached")
+    _, run = await run_it(tmp_path, work, FakeTester(""), provider=provider)
+    assert run.state == "failed" and "rate limit" in run.error

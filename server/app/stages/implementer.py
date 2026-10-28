@@ -59,6 +59,8 @@ class Implementation(BaseModel):
     notes: list[str] = []
     report: str | None = None
     error: str | None = None
+    # Agent stages edit and commit, so they always run on the Copilot CLI for now.
+    provider: str = "copilot"
     created_at: str
     updated_at: str
 
