@@ -14,10 +14,29 @@ interface Props {
   onRun?: () => void
   /** Show a grey check instead of a play arrow until the step is done. */
   check?: boolean
+  /** When the step is done, make the check a link that opens in a new tab. */
+  href?: string
 }
 
 /** Play button for one workflow step; becomes a green check once the step is done. */
-export default function StepButton({ label, status, onRun, check }: Props) {
+export default function StepButton({ label, status, onRun, check, href }: Props) {
+  if (status === 'done' && href) {
+    return (
+      <Tooltip title="Open merge request">
+        <IconButton
+          size="small"
+          color="success"
+          component="a"
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={label}
+        >
+          <CheckCircleIcon />
+        </IconButton>
+      </Tooltip>
+    )
+  }
   if (status === 'done') {
     return (
       <Tooltip title={label}>
