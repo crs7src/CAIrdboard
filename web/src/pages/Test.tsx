@@ -25,15 +25,19 @@ import {
   setTestApproval,
   fetchTestConfig,
   forgetTestConfig,
+  fetchFeedback,
   reportTestProblem,
+  submitTestFeedback,
   startTest,
   stopTest,
+  type FeedbackRun,
   type TestConfig,
   type TestRun,
 } from '../api'
 import StepButton from './StepButton'
 
 export const TEST_POLL_MS = 3000
+export const FEEDBACK_POLL_MS = 2000
 
 const STATE_LABEL = {
   preparing: 'starting the app',
@@ -56,6 +60,8 @@ export default function Test({
   const [config, setConfig] = useState<TestConfig | null>(null)
   const [problem, setProblem] = useState('')
   const [approved, setApproved] = useState(false)
+  const [issues, setIssues] = useState('')
+  const [fixRun, setFixRun] = useState<FeedbackRun | null>(null)
 
   useEffect(() => {
     fetchTest(cardKey).then(
@@ -105,6 +111,40 @@ export default function Test({
     }, TEST_POLL_MS)
     return () => clearInterval(id)
   }, [preparing, cardKey])
+
+  useEffect(() => {
+    fetchFeedback(cardKey).then((f) => setFixRun(f.run), () => {})
+  }, [cardKey])
+
+  const fixing = fixRun?.state === 'running'
+  useEffect(() => {
+    if (!fixing) return
+    const id = setInterval(() => {
+      fetchFeedback(cardKey).then((f) => {
+        setFixRun(f.run)
+        if (f.run?.state === 'running') return
+        // A finished fix run changes the branch and may clear the approval.
+        fetchTest(cardKey).then(setRun, () => {})
+        fetchTestApproval(cardKey).then((a) => setApproved(a.approved), () => setApproved(false))
+      }, () => {})
+    }, FEEDBACK_POLL_MS)
+    return () => clearInterval(id)
+  }, [fixing, cardKey])
+
+  async function sendIssues() {
+    setBusy(true)
+    setError(null)
+    try {
+      setFixRun(await submitTestFeedback(cardKey, issues.trim()))
+      setIssues('')
+      setApproved(false)
+      fetchTest(cardKey).then(setRun, () => {})
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
 
   async function forget() {
     setError(null)
@@ -268,44 +308,90 @@ export default function Test({
               </Typography>
             </Stack>
           )}
-          {!preparing && (config || run) && (
-            <Stack spacing={1}>
-              <TextField
-                label="Describe what is not running right"
-                size="small"
-                multiline
-                minRows={2}
-                value={problem}
-                onChange={(e) => setProblem(e.target.value)}
-                helperText="An AI will fix how the apps are started (not the code) and restart them."
-              />
-              <Stack direction="row" spacing={1}>
-                <Button
-                  variant="contained"
-                  disabled={busy || !problem.trim() || !run}
-                  onClick={() => act(() => reportTestProblem(cardKey, problem.trim())).then((ok) => ok && setProblem(''))}
-                >
-                  Send problem report
-                </Button>
-                {config && (
-                  <Button color="inherit" disabled={busy} onClick={forget}>
-                    Forget saved settings
-                  </Button>
-                )}
-              </Stack>
-            </Stack>
-          )}
-          {!active && !preparing && (
-            <Box>
+          <Stack spacing={1}>
+            <TextField
+              label="Issues"
+              size="small"
+              multiline
+              minRows={2}
+              value={issues}
+              onChange={(e) => setIssues(e.target.value)}
+              helperText="Describe what you found wrong while testing. The app is stopped, the AI that handles code review comments fixes the code, and your approval is withdrawn."
+            />
+            <Stack direction="row" spacing={1}>
               <Button
-                variant="outlined"
-                disabled={busy}
-                onClick={() => act(() => startTest(cardKey, true))}
+                variant="contained"
+                disabled={busy || preparing || fixing || !issues.trim()}
+                onClick={sendIssues}
               >
-                Start with AI
+                Send to code fixer
               </Button>
-            </Box>
-          )}
+              <Button color="inherit" component={RouterLink} to={`/cards/${cardKey}/changes`}>
+                View changes
+              </Button>
+              {config && (
+                <Button color="inherit" disabled={busy} onClick={forget}>
+                  Forget saved settings
+                </Button>
+              )}
+            </Stack>
+            {fixing && (
+              <Alert severity="info" role="note">
+                An AI is fixing the reported issues...
+              </Alert>
+            )}
+            {fixRun?.state === 'done' && (
+              <Alert severity="success" role="note">
+                Fixes made ({fixRun.commits.length} {fixRun.commits.length === 1 ? 'commit' : 'commits'}).
+                Test again and approve.
+              </Alert>
+            )}
+            {fixRun?.state === 'failed' && <Alert severity="error">{fixRun.error}</Alert>}
+          </Stack>
+          {(!active && !preparing) || (!preparing && (config || run)) ? (
+            <Accordion disableGutters variant="outlined" aria-label="App startup">
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>Start with AI / app startup issues</AccordionSummary>
+              <AccordionDetails>
+                <Stack spacing={2}>
+                  {!active && !preparing && (
+                    <Box>
+                      <Button
+                        variant="outlined"
+                        disabled={busy}
+                        onClick={() => act(() => startTest(cardKey, true))}
+                      >
+                        Start with AI
+                      </Button>
+                    </Box>
+                  )}
+                  {!preparing && (config || run) && (
+                    <Stack spacing={1}>
+                      <TextField
+                        label="Report an issue with the app startup"
+                        size="small"
+                        multiline
+                        minRows={2}
+                        value={problem}
+                        onChange={(e) => setProblem(e.target.value)}
+                        helperText="An AI will fix how the apps are started (not the code) and restart them."
+                      />
+                      <Box>
+                        <Button
+                          variant="contained"
+                          disabled={busy || !problem.trim() || !run}
+                          onClick={() =>
+                            act(() => reportTestProblem(cardKey, problem.trim())).then((ok) => ok && setProblem(''))
+                          }
+                        >
+                          Send startup issue report
+                        </Button>
+                      </Box>
+                    </Stack>
+                  )}
+                </Stack>
+              </AccordionDetails>
+            </Accordion>
+          ) : null}
           {!run && !error && (
             <Typography color="text.secondary">Manual testing has not been started.</Typography>
           )}

@@ -426,3 +426,22 @@ test('shows a warning when one card source failed but others loaded', async () =
   expect(await screen.findByRole('link', { name: /GH_APP-1/ })).toHaveAttribute('href', '/cards/GH_APP-1')
   expect(screen.getByRole('note')).toHaveTextContent('Some cards could not be loaded: Could not reach Jira')
 })
+
+test('open GitHub issues are plannable without an Open status in the config', async () => {
+  mockApi({
+    '/api/cards': {
+      body: [
+        card('GH_APP-1', { source: 'github', status: 'Open' }),
+        card('GH_APP-2', { source: 'github', status: 'Closed' }),
+      ],
+    },
+    '/api/plans': { body: {} },
+    '/api/ai-config': { body: { ...config, project_repos: { GH_APP: '/repo' } } },
+  })
+  renderHome()
+  await screen.findByRole('link', { name: /GH_APP-1/ })
+  // the open issue can be planned; the closed one is listed as done
+  const plan = await screen.findAllByRole('button', { name: 'Plan' })
+  expect(plan.filter((b) => !(b as HTMLButtonElement).disabled)).toHaveLength(1)
+  expect(screen.getAllByText('Plan: available')).toHaveLength(1)
+})

@@ -16,7 +16,9 @@ You are given: the card, the approved plan, the branch, the base commit and a nu
 list of feedback comments. A comment is either **general** (about the change as a whole)
 or attached to a **file and line**. Line numbers refer to the files as they are now; a
 line marked as an old-version line was deleted by the change, so the comment is about
-that removed code.
+that removed code. A comment marked **[manual testing]** comes from someone who ran
+the app: it describes behaviour they observed, not a code location, so find the cause by
+reading the code and reproduce it with a test where you can.
 
 ## How to work
 

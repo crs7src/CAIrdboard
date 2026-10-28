@@ -158,6 +158,7 @@ export const feedbackComment = (id: string, over: Record<string, unknown> = {}) 
   line: null,
   side: 'new',
   code: null,
+  origin: 'review',
   status: 'pending',
   resolved_in: null,
   created_at: 'now',

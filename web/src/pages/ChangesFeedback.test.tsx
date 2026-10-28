@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, expect, test, vi } from 'vitest'
 import { changes, feedbackComment, feedbackRun, mockApi } from '../test-utils'
 import Changes from './Changes'
+import { CommentCard } from './FeedbackPanel'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -169,4 +170,9 @@ test('shows a submit error from the server', async () => {
   await screen.findByText('Comment c1')
   await userEvent.click(submitButton())
   expect(await screen.findByRole('alert')).toHaveTextContent('Another run is in progress')
+})
+
+test('a comment from manual testing shows a chip', () => {
+  render(<CommentCard comment={feedbackComment('t1', { origin: 'testing' }) as never} />)
+  expect(screen.getByText('manual testing')).toBeInTheDocument()
 })

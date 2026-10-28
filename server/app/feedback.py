@@ -43,6 +43,8 @@ class CommentInput(BaseModel):
     # "new": the line in the branch's version; "old": a deleted line of the base version.
     side: Literal["new", "old"] = "new"
     code: str | None = None
+    # Where the comment came from: the code review, or issues found by manual testing.
+    origin: Literal["review", "testing"] = "review"
 
     @field_validator("text")
     @classmethod
@@ -179,6 +181,8 @@ def load_skill() -> str:
 
 
 def format_comment(index: int, c: FeedbackComment) -> str:
+    if c.origin == "testing":
+        return f"{index}. [manual testing] {c.text}"
     if not c.file:
         return f"{index}. [general] {c.text}"
     where = c.file
@@ -222,8 +226,9 @@ def build_prompt(
     parts += [
         "",
         (
-            "Review feedback to address (line numbers refer to the files as they are "
-            "now, at HEAD, unless marked as an old-version line):"
+            "Feedback to address (code review and/or manual testing; line numbers "
+            "refer to the files as they are now, at HEAD, unless marked as an "
+            "old-version line):"
         ),
         *(format_comment(i, c) for i, c in enumerate(comments, 1)),
     ]

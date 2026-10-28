@@ -155,7 +155,38 @@ def _valid_key(key: str) -> str:
     return key
 
 
+async def _link_issue_repos(settings: Settings, cards: list[jira.Card]) -> None:
+    """Map a GitHub issue's project to the local repo whose origin is that GitHub repo,
+    so its plans can run there without a manual mapping."""
+    config = load_ai_config(settings.ai_config_file)
+    pending = {
+        c.project: c.external_repo.lower()
+        for c in cards
+        if c.source == "github" and c.external_repo and not config.repo_for(c.project)
+    }
+    if not pending:
+        return
+    origins: dict[str, str | None] = {}
+    for repo in dict.fromkeys(config.project_repos.values()):
+        remote = await remotes.origin_remote(repo)
+        origins[repo] = remote[1].lower() if remote else None
+    changed = False
+    for project, wanted in pending.items():
+        repo = next((r for r, path in origins.items() if path == wanted), None)
+        if repo:
+            config.project_repos[project] = repo
+            changed = True
+    if changed:
+        save_ai_config(settings.ai_config_file, config)
+
+
 async def _load_card(settings: Settings, key: str) -> jira.Card:
+    card = await _fetch_card(settings, key)
+    await _link_issue_repos(settings, [card])
+    return card
+
+
+async def _fetch_card(settings: Settings, key: str) -> jira.Card:
     github_issue = github.is_issue_key(key)
     if github_issue and not settings.github_configured:
         raise HTTPException(
@@ -205,6 +236,7 @@ async def cards(settings: SettingsDep, response: Response) -> list[jira.Card]:
             raise result
     if errors and len(errors) == len(results):
         raise HTTPException(502, "; ".join(errors))
+    await _link_issue_repos(settings, found)
     if errors:
         response.headers["X-Card-Warnings"] = "; ".join(errors)
     return found
@@ -216,7 +248,7 @@ async def card_detail(key: str, settings: SettingsDep) -> CardDetail:
     config = load_ai_config(settings.ai_config_file)
     return CardDetail(
         **card.model_dump(),
-        eligible=config.is_eligible(card.status),
+        eligible=config.is_eligible(card.status, card.source),
         repo_configured=config.repo_for(card.project) is not None,
     )
 
@@ -350,7 +382,7 @@ async def create_plan(
     key = _valid_key(key)
     card = await _load_card(settings, key)
     config = load_ai_config(settings.ai_config_file)
-    if not config.is_eligible(card.status):
+    if not config.is_eligible(card.status, card.source):
         raise HTTPException(
             409, f"Plans are not generated for cards in status '{card.status}'"
         )
@@ -629,7 +661,10 @@ async def submit_feedback(
         raise HTTPException(409, "Add at least one comment first")
     card = await _load_card(settings, key)
     repo = _repo_for_key(settings, key)
+    return _start_feedback(settings, runner, background, store, impl, plan, card, repo)
 
+
+def _check_feedback_idle(store: feedback.FeedbackStore, key: str) -> None:
     previous = feedback.recover_stale(store, store.latest(key))
     if (
         key in feedback.ACTIVE
@@ -638,6 +673,21 @@ async def submit_feedback(
         or (previous and previous.state == "running")
     ):
         raise HTTPException(409, "This card is already being worked on")
+
+
+def _start_feedback(
+    settings: Settings,
+    runner,
+    background: BackgroundTasks,
+    store: feedback.FeedbackStore,
+    impl,
+    plan,
+    card,
+    repo: str,
+) -> feedback.FeedbackRun:
+    """Check the card and repo are free, then start a run on the pending comments."""
+    key = card.key
+    _check_feedback_idle(store, key)
     if repo in implementer.ACTIVE_REPOS:
         raise HTTPException(
             409, "Another run is in progress in this repo. Wait for it to finish."
@@ -826,6 +876,28 @@ async def report_test_problem(
         previous=previous,
     )
     return run
+
+
+@app.post("/api/cards/{key}/test/feedback", status_code=202)
+async def send_test_feedback(
+    key: str,
+    body: TestProblemBody,
+    settings: SettingsDep,
+    runner: RunnerDep,
+    background: BackgroundTasks,
+) -> feedback.FeedbackRun:
+    """Hand issues found in manual testing to the AI that fixes review comments."""
+    key = _valid_key(key)
+    impl, _review, plan, card, repo = await _test_context(settings, key)
+    test_store = _test_store(settings)
+    previous = tester.recover_stale(test_store, test_store.latest(key))
+    _check_test_free(key, repo, previous, stoppable=True)
+    store = feedback.FeedbackStore(_db(settings))
+    _check_feedback_idle(store, key)
+    if key in tester.APPS:
+        await tester.stop_app(test_store, key)
+    store.add(key, feedback.CommentInput(text=body.message, origin="testing"))
+    return _start_feedback(settings, runner, background, store, impl, plan, card, repo)
 
 
 class ApprovalState(BaseModel):

@@ -280,3 +280,14 @@ def test_prompt_describes_old_side_lines():
         feedback.format_comment(1, c)
         == "1. [a.py, deleted line in the old version 4] why removed?"
     )
+
+
+def test_testing_comments_are_labelled_and_old_rows_default_to_review():
+    c = feedback.FeedbackComment(
+        id="a", text="button does nothing", origin="testing", created_at="t"
+    )
+    assert feedback.format_comment(1, c) == "1. [manual testing] button does nothing"
+    old = feedback.FeedbackComment.model_validate_json(
+        '{"id":"b","text":"x","created_at":"t"}'
+    )
+    assert old.origin == "review"

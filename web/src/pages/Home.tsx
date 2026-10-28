@@ -36,7 +36,8 @@ import {
   type ReviewState,
 } from '../api'
 
-function isEligible(config: AiConfig | null, status: string) {
+function isEligible(config: AiConfig | null, status: string, source?: string) {
+  if (source === 'github' && status === 'Open') return true
   const wanted = status.trim().toLowerCase()
   return !!config?.eligible_statuses.some((s) => s.trim().toLowerCase() === wanted)
 }
@@ -144,7 +145,7 @@ export default function Home() {
 
   // An ineligible status is always In Review/Done; otherwise a plan in any state means In Progress.
   // If the config could not be loaded, every card is treated as eligible.
-  const inTodo = (c: JiraCard) => !config || isEligible(config, c.status)
+  const inTodo = (c: JiraCard) => !config || isEligible(config, c.status, c.source)
   const sections = cards?.length
     ? [
         { title: 'In Progress', items: cards.filter((c) => plans[c.key] && inTodo(c)) },
@@ -193,7 +194,7 @@ export default function Home() {
               label="Plan"
               status={planStep(
                 plans[card.key],
-                isEligible(config, card.status) && !!config?.project_repos[card.project],
+                isEligible(config, card.status, card.source) && !!config?.project_repos[card.project],
               )}
               onRun={() =>
                 plans[card.key] === 'ready'
@@ -279,7 +280,7 @@ export default function Home() {
                   <Chip label={`Plan: ${plans[card.key]}`} size="small" variant="outlined" />
                 )
               )}
-              {!plans[card.key] && isEligible(config, card.status) && (
+              {!plans[card.key] && isEligible(config, card.status, card.source) && (
                 <Chip label="Plan: available" size="small" color="primary" variant="outlined" />
               )}
             </Stack>

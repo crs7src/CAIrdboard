@@ -693,3 +693,50 @@ def test_a_review_that_fixes_things_withdraws_the_approval(client, env):
     review.state = "fixed"
     reviews.save(review)
     assert client.get("/api/cards/AB-1/test/approval").json()["approved"] is False
+
+
+@respx.mock
+def test_api_test_feedback_stops_the_app_and_runs_the_code_fixer(client, env, ai):
+    tmp_path, work = env
+    mock_jira()
+    allow_local()
+    approve_plan(tmp_path)
+    impl = make_impl(tmp_path, work)
+    make_review(tmp_path, impl)
+    port = free_port()
+    ai.stdout = reply(port)
+    client.post("/api/cards/AB-1/test", json={"use_ai": True})
+    assert client.get("/api/cards/AB-1/test").json()["state"] == "running"
+
+    assert (
+        client.post("/api/cards/AB-1/test/feedback", json={"message": " "}).status_code
+        == 422
+    )
+    ai.stdout = "## Feedback summary\nFixed"
+    r = client.post("/api/cards/AB-1/test/feedback", json={"message": "Save is broken"})
+    assert r.status_code == 202
+    assert "AB-1" not in tester.APPS
+    assert client.get("/api/cards/AB-1/test").json()["state"] == "stopped"
+    data = client.get("/api/cards/AB-1/feedback").json()
+    assert data["run"]["state"] == "done", data["run"]["error"]
+    assert [(c["origin"], c["status"]) for c in data["comments"]] == [
+        ("testing", "resolved")
+    ]
+    assert "[manual testing] Save is broken" in prompt_of(ai)
+    assert str(work) not in implementer.ACTIVE_REPOS
+
+
+@respx.mock
+def test_api_test_feedback_conflicts(client, env, ai):
+    tmp_path, work = env
+    mock_jira()
+    approve_plan(tmp_path)
+    impl = make_impl(tmp_path, work)
+    body = {"message": "x"}
+    assert client.post("/api/cards/AB-1/test/feedback", json=body).status_code == 409
+    make_review(tmp_path, impl)
+    implementer.ACTIVE_REPOS.add(str(work))
+    assert client.post("/api/cards/AB-1/test/feedback", json=body).status_code == 409
+    implementer.ACTIVE_REPOS.clear()
+    assert client.get("/api/cards/AB-1/feedback").json()["comments"] == []
+    assert ai.ai_calls == []

@@ -1,12 +1,16 @@
+import subprocess
+
 import httpx
 import pytest
 import respx
 from dbutil import db
 from fastapi.testclient import TestClient
+from test_plans import FakeRunner
 
 from app import github
+from app.ai_config import AiConfig, load_ai_config, save_ai_config
 from app.config import Settings, get_settings
-from app.main import app
+from app.main import app, get_runner
 from app.merge_request import closing_line
 
 API = "https://api.github.com"
@@ -196,3 +200,65 @@ def test_closing_line():
     assert closing_line(card, "gitlab", "g/p") is None
     jira_card = card.model_copy(update={"source": "jira", "external_repo": None})
     assert closing_line(jira_card, "github", "me/app") is None
+
+
+@pytest.fixture
+def planning(tmp_path, monkeypatch):
+    """A local repo whose origin is me/my-app, mapped under an unrelated project."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "remote",
+            "add",
+            "origin",
+            "git@github.com:me/my-app.git",
+        ],
+        check=True,
+    )
+    cfg = tmp_path / "ai.json"
+    monkeypatch.setenv("AI_CONFIG_FILE", str(cfg))
+    save_ai_config(
+        cfg,
+        AiConfig(eligible_statuses=["To Do"], project_repos={"JIRAPROJ": str(repo)}),
+    )
+    runner = FakeRunner()
+    app.dependency_overrides[get_runner] = lambda: runner
+    return cfg, repo, runner
+
+
+@respx.mock
+def test_an_open_issue_gets_a_plan_with_its_repo_found_from_origin(client, planning):
+    cfg, repo, runner = planning
+    use(settings())
+    search([issue(12)])
+    respx.get(f"{API}/repos/me/my-app/issues/12").respond(json=issue(12))
+    respx.get(f"{API}/repos/me/my-app/issues/12/comments").respond(json=[])
+    detail = client.get("/api/cards/GH_MY_APP-12").json()
+    assert detail["eligible"] and detail["repo_configured"]
+    assert load_ai_config(cfg).repo_for("GH_MY_APP") == str(repo)
+
+    response = client.post("/api/cards/GH_MY_APP-12/plan")
+    assert response.status_code == 202
+    assert client.get("/api/cards/GH_MY_APP-12/plan").json()["state"] == "ready"
+    assert runner.calls[0][1] == str(repo)
+    assert "GitHub status: Open" in runner.calls[0][0][3]
+
+
+@respx.mock
+def test_card_list_links_repos_and_closed_issues_stay_ineligible(client, planning):
+    cfg, repo, _ = planning
+    use(settings())
+    search([issue(1), issue(2, "me/elsewhere")], [issue(3, state="closed")])
+    client.get("/api/cards")
+    assert load_ai_config(cfg).repo_for("GH_MY_APP") == str(repo)
+    assert load_ai_config(cfg).repo_for("GH_ELSEWHERE") is None
+
+    respx.get(f"{API}/repos/me/my-app/issues/3").respond(json=issue(3, state="closed"))
+    respx.get(f"{API}/repos/me/my-app/issues/3/comments").respond(json=[])
+    assert client.get("/api/cards/GH_MY_APP-3").json()["eligible"] is False
+    assert client.post("/api/cards/GH_MY_APP-3/plan").status_code == 409

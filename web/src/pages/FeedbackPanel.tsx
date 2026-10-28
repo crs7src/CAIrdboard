@@ -7,6 +7,7 @@ import AccordionSummary from '@mui/material/AccordionSummary'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
 import IconButton from '@mui/material/IconButton'
 import Paper from '@mui/material/Paper'
@@ -37,10 +38,15 @@ export function CommentCard({
 
   return (
     <Paper variant="outlined" sx={{ p: 1, width: '100%' }}>
-      {showLocation && (
-        <Typography variant="caption" color="text.secondary" sx={{ wordBreak: 'break-all' }}>
-          {commentLocation(comment)}
-        </Typography>
+      {(showLocation || comment.origin === 'testing') && (
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+          {showLocation && (
+            <Typography variant="caption" color="text.secondary" sx={{ wordBreak: 'break-all' }}>
+              {commentLocation(comment)}
+            </Typography>
+          )}
+          {comment.origin === 'testing' && <Chip label="manual testing" size="small" variant="outlined" />}
+        </Stack>
       )}
       {editing ? (
         <Stack spacing={1}>
