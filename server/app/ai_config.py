@@ -23,6 +23,8 @@ class AiConfig(BaseModel):
     project_repos: dict[str, str] = Field(default_factory=dict)
     # Project key -> display name shown on the Projects page.
     project_names: dict[str, str] = Field(default_factory=dict)
+    # Start the review automatically when an implementation completes.
+    auto_review: bool = True
 
     @field_validator("eligible_statuses")
     @classmethod
