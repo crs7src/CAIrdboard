@@ -16,7 +16,8 @@ const mr = (over: Record<string, unknown> = {}) => ({
   branch: 'AB-1_add_dark_mode',
   target_branch: 'main',
   title: 'AB-1 add dark mode',
-  gitlab_project: 'grp/app',
+  provider: 'gitlab',
+  host_project: 'grp/app',
   mr_iid: 42,
   mr_url: 'https://git.x.com/grp/app/-/merge_requests/42',
   updated_existing: false,
@@ -77,4 +78,22 @@ test('a refused start shows the server message', async () => {
   render(<MergeRequest cardKey="AB-1" approved />)
   await userEvent.click(await screen.findByRole('button', { name: 'Create merge request' }))
   expect(await screen.findByText('No GitLab project is known')).toBeInTheDocument()
+})
+
+test('uses pull request wording for a GitHub project', async () => {
+  mockApi({
+    '/api/cards/AB-1/merge-request': { body: mr({ provider: 'github', outdated: true, mr_iid: 7, mr_url: 'https://github.com/o/r/pull/7' }) },
+  })
+  render(<MergeRequest cardKey="AB-1" approved />)
+  expect(await screen.findByRole('link', { name: /#7 AB-1 add dark mode/ })).toBeInTheDocument()
+  expect(screen.getByText(/Push the updates to the pull request/)).toBeInTheDocument()
+})
+
+test('before any run the wording follows the project host', async () => {
+  mockApi({
+    '/api/cards/AB-1/merge-request': NONE,
+    '/api/repo-hosts/AB': { body: { project: 'AB', repo: '/r', provider: 'github', path: 'o/r', source: 'origin', detected: null } },
+  })
+  render(<MergeRequest cardKey="AB-1" approved />)
+  expect(await screen.findByRole('button', { name: 'Create pull request' })).toBeInTheDocument()
 })

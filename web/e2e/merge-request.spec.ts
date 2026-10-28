@@ -67,10 +67,13 @@ test('approve the test, create the merge request and follow its link', async ({ 
     return route.fulfill({ json: { approved, approved_at: approved ? 't' : null } })
   })
   const mrRun = (state: string) => ({
-    ...base, state, branch: 'AB-1_x', target_branch: 'main', title: 'AB-1 x', gitlab_project: 'grp/app',
+    ...base, state, branch: 'AB-1_x', target_branch: 'main', title: 'AB-1 x', provider: 'gitlab', host_project: 'grp/app',
     mr_iid: state === 'created' ? 42 : null, mr_url: state === 'created' ? MR_URL : null,
     updated_existing: false, outdated: false, error: null,
   })
+  await page.route('**/api/repo-hosts/AB', (route) =>
+    route.fulfill({ json: { project: 'AB', repo: '/r', provider: 'gitlab', path: 'grp/app', source: 'origin', detected: null } }),
+  )
   await page.route('**/api/merge-requests', (route) =>
     route.fulfill({ json: mr ? { 'AB-1': mr.state } : {} }),
   )

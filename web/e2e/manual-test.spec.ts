@@ -82,6 +82,9 @@ test('start the manual test, open a link, and stop the app', async ({ page }) =>
   })
 
   let approved = false
+  await page.route('**/api/repo-hosts/AB', (route) =>
+    route.fulfill({ json: { project: 'AB', repo: '/r', provider: 'gitlab', path: 'grp/app', source: 'origin', detected: null } }),
+  )
   await page.route('**/api/merge-requests', (route) => route.fulfill({ json: {} }))
   await page.route('**/api/cards/AB-1/merge-request', (route) =>
     route.fulfill({ status: 404, json: { detail: 'none' } }),
@@ -202,6 +205,9 @@ test('saved settings are used, and a problem report restarts with the fix', asyn
       : route.fulfill({ status: 404, json: { detail: 'No test run exists for this card' } })
   })
 
+  await page.route('**/api/repo-hosts/AB', (route) =>
+    route.fulfill({ json: { project: 'AB', repo: '/r', provider: 'gitlab', path: 'grp/app', source: 'origin', detected: null } }),
+  )
   await page.route('**/api/merge-requests', (route) => route.fulfill({ json: {} }))
   await page.route('**/api/cards/AB-1/merge-request', (route) =>
     route.fulfill({ status: 404, json: { detail: 'none' } }),

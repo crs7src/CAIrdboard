@@ -3,22 +3,26 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app import (
     changes,
     feedback,
+    github,
     gitlab,
+    hosting,
     implementer,
     jira,
     merge_request,
     planner,
+    remotes,
     reviewer,
     skills,
     tester,
 )
 from app.ai_config import AiConfig, load_ai_config, save_ai_config
 from app.config import (
+    GITHUB_FIELDS,
     GITLAB_FIELDS,
     Settings,
     get_settings,
@@ -26,6 +30,7 @@ from app.config import (
 )
 from app.db import CARD_KEY_RE, Approvals, Database
 from app.legacy_import import import_legacy_files
+from app.remotes import HostError, HostProject
 
 
 def _db(settings: Settings) -> Database:
@@ -926,7 +931,7 @@ async def get_changes(
         raise HTTPException(500, str(e)) from None
 
 
-class GitLabCredentialsUpdate(BaseModel):
+class HostCredentialsUpdate(BaseModel):
     url: str | None = None
     token: str | None = None
 
@@ -950,126 +955,163 @@ class GitLabCredentialsUpdate(BaseModel):
         return v.rstrip("/")
 
 
-class GitLabMappingBody(BaseModel):
+class RepoHostBody(BaseModel):
+    provider: hosting.Provider
     path: str
 
     @field_validator("path")
     @classmethod
-    def valid_path(cls, v: str) -> str:
-        v = v.strip().strip("/").removesuffix(".git")
-        if not gitlab.PROJECT_PATH_RE.match(v):
+    def clean_path(cls, v: str) -> str:
+        return v.strip().strip("/").removesuffix(".git")
+
+    @model_validator(mode="after")
+    def valid_path(self) -> RepoHostBody:
+        if self.provider == "github":
+            if not remotes.REPO_PATH_RE.match(self.path):
+                raise ValueError("Use the repository path, like owner/repo")
+        elif not remotes.PROJECT_PATH_RE.match(self.path):
             raise ValueError("Use the project path, like group/subgroup/project")
-        return v
+        return self
 
 
-class GitLabProjectInfo(BaseModel):
-    project: str
-    repo: str
-    detected: str | None
-    override: str | None
-    effective: str | None
-
-
-@app.get("/api/gitlab/status")
-async def gitlab_status(settings: SettingsDep) -> dict:
-    status = {
-        "configured": settings.gitlab_configured,
-        "connected": False,
-        "user": None,
-        "url": settings.gitlab_url,
-    }
-    if not settings.gitlab_configured:
+async def _host_status(
+    settings: Settings, provider: hosting.Provider, fetch_user, error
+) -> dict:
+    url = settings.gitlab_url if provider == "gitlab" else settings.github_url
+    is_configured = hosting.configured(settings, provider)
+    status = {"configured": is_configured, "connected": False, "user": None, "url": url}
+    if not is_configured:
         return status
     try:
-        status["user"] = await gitlab.fetch_current_user(settings)
+        status["user"] = await fetch_user(settings)
         status["connected"] = True
-    except gitlab.GitLabError:
+    except error:
         pass
     return status
 
 
-@app.put("/api/gitlab/credentials")
-async def update_gitlab_credentials(
-    body: GitLabCredentialsUpdate, settings: SettingsDep
+async def _update_host_credentials(
+    body: HostCredentialsUpdate,
+    settings: Settings,
+    provider: hosting.Provider,
+    fetch_user,
 ) -> dict:
-    """Update the stored GitLab credentials; verified against GitLab before saving."""
-    updates = {"gitlab_url": body.url, "gitlab_token": body.token}
+    """Verify the merged credentials against the host, then save them."""
+    label = hosting.LABELS[provider]
+    prefix = provider
+    fields = GITLAB_FIELDS if provider == "gitlab" else GITHUB_FIELDS
+    file = (
+        settings.gitlab_credentials_file
+        if provider == "gitlab"
+        else settings.github_credentials_file
+    )
+    updates = {f"{prefix}_url": body.url, f"{prefix}_token": body.token}
     updates = {k: v for k, v in updates.items() if v is not None}
     if not updates:
         raise HTTPException(422, "Provide at least one of url, token")
     candidate = settings.model_copy(update=updates)
-    if not candidate.gitlab_configured:
-        raise HTTPException(422, "GitLab URL and token are both required")
+    if not hosting.configured(candidate, provider):
+        raise HTTPException(422, f"{label} URL and token are both required")
     try:
-        user = await gitlab.fetch_current_user(candidate)
-    except gitlab.GitLabError as e:
-        raise HTTPException(400, f"GitLab did not accept these credentials: {e}") from e
-    save_credentials(settings.gitlab_credentials_file, updates, GITLAB_FIELDS)
+        user = await fetch_user(candidate)
+    except HostError as e:
+        raise HTTPException(
+            400, f"{label} did not accept these credentials: {e}"
+        ) from e
+    save_credentials(file, updates, fields)
     return {"connected": True, "user": user}
 
 
-async def _gitlab_info(
-    settings: Settings, project: str, repo: str
-) -> GitLabProjectInfo:
-    detected = await gitlab.detect_project_path(repo, settings.gitlab_url)
-    override = gitlab.ProjectMappings(_db(settings)).get(project)
-    return GitLabProjectInfo(
-        project=project,
-        repo=repo,
-        detected=detected,
-        override=override,
-        effective=override or detected,
+@app.get("/api/gitlab/status")
+async def gitlab_status(settings: SettingsDep) -> dict:
+    return await _host_status(
+        settings, "gitlab", gitlab.fetch_current_user, gitlab.GitLabError
     )
 
 
-@app.get("/api/gitlab/projects")
-async def list_gitlab_projects(settings: SettingsDep) -> list[GitLabProjectInfo]:
-    """Every Jira project with a repo, and the GitLab project it maps to."""
+@app.put("/api/gitlab/credentials")
+async def update_gitlab_credentials(
+    body: HostCredentialsUpdate, settings: SettingsDep
+) -> dict:
+    """Update the stored GitLab credentials; verified against GitLab before saving."""
+    return await _update_host_credentials(
+        body, settings, "gitlab", gitlab.fetch_current_user
+    )
+
+
+@app.get("/api/github/status")
+async def github_status(settings: SettingsDep) -> dict:
+    return await _host_status(
+        settings, "github", github.fetch_current_user, github.GitHubError
+    )
+
+
+@app.put("/api/github/credentials")
+async def update_github_credentials(
+    body: HostCredentialsUpdate, settings: SettingsDep
+) -> dict:
+    """Update the stored GitHub credentials; verified against GitHub before saving."""
+    return await _update_host_credentials(
+        body, settings, "github", github.fetch_current_user
+    )
+
+
+async def _repo_host(settings: Settings, project: str, repo: str) -> hosting.RepoHost:
+    return await hosting.resolve(settings, _db(settings), project, repo)
+
+
+@app.get("/api/repo-hosts")
+async def list_repo_hosts(settings: SettingsDep) -> list[hosting.RepoHost]:
+    """Every Jira project with a repo, and the GitLab/GitHub project it maps to."""
     repos = load_ai_config(settings.ai_config_file).project_repos
     return [
-        await _gitlab_info(settings, project, repo)
+        await _repo_host(settings, project, repo)
         for project, repo in sorted(repos.items())
     ]
 
 
-@app.put("/api/gitlab/projects/{project}")
-async def put_gitlab_project(
-    project: str, body: GitLabMappingBody, settings: SettingsDep
-) -> GitLabProjectInfo:
+@app.get("/api/repo-hosts/{project}")
+async def get_repo_host(project: str, settings: SettingsDep) -> hosting.RepoHost:
+    repo = _project_repo(settings, project)
+    return await _repo_host(settings, project.upper(), repo)
+
+
+@app.put("/api/repo-hosts/{project}")
+async def put_repo_host(
+    project: str, body: RepoHostBody, settings: SettingsDep
+) -> hosting.RepoHost:
     repo = _project_repo(settings, project)
     project = project.upper()
-    gitlab.ProjectMappings(_db(settings)).set(project, body.path)
-    return await _gitlab_info(settings, project, repo)
+    hosting.Mappings(_db(settings)).set(project, body.provider, body.path)
+    return await _repo_host(settings, project, repo)
 
 
-@app.delete("/api/gitlab/projects/{project}")
-async def delete_gitlab_project(
-    project: str, settings: SettingsDep
-) -> GitLabProjectInfo:
+@app.delete("/api/repo-hosts/{project}")
+async def delete_repo_host(project: str, settings: SettingsDep) -> hosting.RepoHost:
     repo = _project_repo(settings, project)
     project = project.upper()
-    gitlab.ProjectMappings(_db(settings)).delete(project)
-    return await _gitlab_info(settings, project, repo)
+    hosting.Mappings(_db(settings)).delete(project)
+    return await _repo_host(settings, project, repo)
 
 
-@app.get("/api/gitlab/projects/{project}/check")
-async def check_gitlab_project(
-    project: str, settings: SettingsDep
-) -> gitlab.GitLabProject:
-    """Confirm the token can see the mapped GitLab project and report its default branch."""
+@app.get("/api/repo-hosts/{project}/check")
+async def check_repo_host(project: str, settings: SettingsDep) -> HostProject:
+    """Confirm the token can see the mapped project and report its default branch."""
     repo = _project_repo(settings, project)
-    if not settings.gitlab_configured:
+    host = await _repo_host(settings, project.upper(), repo)
+    if host.provider is None or host.path is None:
         raise HTTPException(
-            503, "GitLab is not configured. Add your credentials in Settings."
+            409,
+            "No GitLab or GitHub project is known for this repo. Set one in Settings.",
         )
-    info = await _gitlab_info(settings, project.upper(), repo)
-    if info.effective is None:
+    if not hosting.configured(settings, host.provider):
         raise HTTPException(
-            409, "No GitLab project is known for this repo. Set one in Settings."
+            503,
+            f"{hosting.LABELS[host.provider]} is not configured. Add your credentials in Settings.",
         )
     try:
-        return await gitlab.fetch_project(settings, info.effective)
-    except gitlab.GitLabError as e:
+        return await hosting.fetch_project(settings, host.provider, host.path)
+    except HostError as e:
         raise HTTPException(502, str(e)) from e
 
 
@@ -1123,16 +1165,17 @@ async def create_merge_request(
         raise HTTPException(
             409, "Approve the manual test before creating a merge request"
         )
-    if not settings.gitlab_configured:
-        raise HTTPException(
-            503, "GitLab is not configured. Add your credentials in Settings."
-        )
     repo = _repo_for_key(settings, key)
-    project = key.split("-")[0]
-    info = await _gitlab_info(settings, project, repo)
-    if info.effective is None:
+    host = await _repo_host(settings, key.split("-")[0], repo)
+    if host.provider is None or host.path is None:
         raise HTTPException(
-            409, "No GitLab project is known for this repo. Set one in Settings."
+            409,
+            "No GitLab or GitHub project is known for this repo. Set one in Settings.",
+        )
+    if not hosting.configured(settings, host.provider):
+        raise HTTPException(
+            503,
+            f"{hosting.LABELS[host.provider]} is not configured. Add your credentials in Settings.",
         )
     card = await _load_card(settings, key)
 
@@ -1148,7 +1191,7 @@ async def create_merge_request(
     ):
         raise HTTPException(409, "This card is already being worked on")
 
-    run = store.create(key, impl, info.effective)
+    run = store.create(key, impl, host.provider, host.path)
     merge_request.ACTIVE.add(key)
     background.add_task(
         merge_request.run_merge_request, store, run, impl, card, repo, settings, runner

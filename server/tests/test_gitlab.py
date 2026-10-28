@@ -8,8 +8,8 @@ from fastapi.testclient import TestClient
 
 from app.ai_config import AiConfig, save_ai_config
 from app.config import GITLAB_FIELDS, get_settings, read_saved_credentials
-from app.gitlab import parse_remote
 from app.main import app
+from app.remotes import parse_remote
 
 URL = "https://git.example.com"
 TOKEN = "glpat-secret"
@@ -150,43 +150,48 @@ def test_projects_detect_from_origin_and_override(env):
     client, repo, cred = env
     configure(cred)
     set_origin(repo, "git@git.example.com:grp/app.git")
-    (info,) = client.get("/api/gitlab/projects").json()
+    (info,) = client.get("/api/repo-hosts").json()
     assert info["project"] == "AB"
-    assert info["detected"] == "grp/app" == info["effective"]
-    assert info["override"] is None
+    assert info["detected"] == {"provider": "gitlab", "path": "grp/app"}
+    assert (info["provider"], info["path"], info["source"]) == (
+        "gitlab",
+        "grp/app",
+        "origin",
+    )
 
-    response = client.put("/api/gitlab/projects/AB", json={"path": "other/proj.git"})
-    assert response.json()["override"] == "other/proj"
-    assert response.json()["effective"] == "other/proj"
-    assert response.json()["detected"] == "grp/app"
+    response = client.put(
+        "/api/repo-hosts/AB", json={"provider": "gitlab", "path": "other/proj.git"}
+    )
+    assert response.json()["source"] == "override"
+    assert response.json()["path"] == "other/proj"
+    assert response.json()["detected"]["path"] == "grp/app"
 
-    response = client.delete("/api/gitlab/projects/AB")
-    assert response.json()["override"] is None
-    assert response.json()["effective"] == "grp/app"
+    response = client.delete("/api/repo-hosts/AB")
+    assert response.json()["source"] == "origin"
+    assert response.json()["path"] == "grp/app"
 
 
 def test_remote_on_another_host_is_not_detected(env):
     client, repo, cred = env
     configure(cred)
-    set_origin(repo, "git@github.com:grp/app.git")
-    assert client.get("/api/gitlab/projects").json()[0]["detected"] is None
+    set_origin(repo, "git@bitbucket.org:grp/app.git")
+    assert client.get("/api/repo-hosts").json()[0]["detected"] is None
 
 
 def test_no_origin_means_nothing_detected(env):
     client, _, _ = env
-    assert client.get("/api/gitlab/projects").json()[0]["effective"] is None
+    assert client.get("/api/repo-hosts").json()[0]["path"] is None
 
 
 def test_mapping_validation_and_unknown_project(env):
     client, _, _ = env
-    assert (
-        client.put("/api/gitlab/projects/AB", json={"path": "nogroup"}).status_code
-        == 422
-    )
-    assert (
-        client.put("/api/gitlab/projects/ZZ", json={"path": "a/b"}).status_code == 404
-    )
-    assert client.get("/api/gitlab/projects/ZZ/check").status_code == 404
+    body = {"provider": "gitlab", "path": "nogroup"}
+    assert client.put("/api/repo-hosts/AB", json=body).status_code == 422
+    body = {"provider": "github", "path": "a/b/c"}
+    assert client.put("/api/repo-hosts/AB", json=body).status_code == 422
+    body = {"provider": "gitlab", "path": "a/b"}
+    assert client.put("/api/repo-hosts/ZZ", json=body).status_code == 404
+    assert client.get("/api/repo-hosts/ZZ/check").status_code == 404
 
 
 @respx.mock
@@ -202,9 +207,9 @@ def test_check_returns_default_branch(env):
             "default_branch": "main",
         }
     )
-    response = client.get("/api/gitlab/projects/AB/check")
+    response = client.get("/api/repo-hosts/AB/check")
     assert response.json() == {
-        "id": 7,
+        "provider": "gitlab",
         "path": "grp/app",
         "web_url": f"{URL}/grp/app",
         "default_branch": "main",
@@ -217,7 +222,7 @@ def test_check_uses_override(env):
     client, repo, cred = env
     configure(cred)
     set_origin(repo, "git@git.example.com:grp/app.git")
-    client.put("/api/gitlab/projects/AB", json={"path": "x/y"})
+    client.put("/api/repo-hosts/AB", json={"provider": "gitlab", "path": "x/y"})
     route = respx.get(f"{URL}/api/v4/projects/x%2Fy").respond(
         json={
             "id": 1,
@@ -226,18 +231,18 @@ def test_check_uses_override(env):
             "default_branch": None,
         }
     )
-    assert client.get("/api/gitlab/projects/AB/check").status_code == 200
+    assert client.get("/api/repo-hosts/AB/check").status_code == 200
     assert route.called
 
 
 @respx.mock
 def test_check_errors(env):
     client, _, cred = env
-    assert client.get("/api/gitlab/projects/AB/check").status_code == 503
+    assert client.get("/api/repo-hosts/AB/check").status_code == 409
+    client.put("/api/repo-hosts/AB", json={"provider": "gitlab", "path": "x/y"})
+    assert client.get("/api/repo-hosts/AB/check").status_code == 503
     configure(cred)
-    assert client.get("/api/gitlab/projects/AB/check").status_code == 409
-    client.put("/api/gitlab/projects/AB", json={"path": "x/y"})
     respx.get(f"{URL}/api/v4/projects/x%2Fy").respond(404)
-    response = client.get("/api/gitlab/projects/AB/check")
+    response = client.get("/api/repo-hosts/AB/check")
     assert response.status_code == 502
     assert "not found" in response.json()["detail"].lower()

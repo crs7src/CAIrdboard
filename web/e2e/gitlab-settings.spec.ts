@@ -6,9 +6,10 @@ test('connect GitLab and map and check a project under Settings', async ({ page 
   const info = () => ({
     project: 'AB',
     repo: '/repo',
-    detected: 'grp/app',
-    override,
-    effective: override ?? 'grp/app',
+    provider: 'gitlab',
+    path: override ?? 'grp/app',
+    source: override ? 'override' : 'origin',
+    detected: { provider: 'gitlab', path: 'grp/app' },
   })
   await page.route('**/api/gitlab/status', (route) => route.fulfill({ json: status }))
   await page.route('**/api/gitlab/credentials', (route) => {
@@ -16,14 +17,14 @@ test('connect GitLab and map and check a project under Settings', async ({ page 
     status = { configured: true, connected: true, user: 'Me', url: body.url }
     return route.fulfill({ json: { connected: true, user: 'Me' } })
   })
-  await page.route('**/api/gitlab/projects', (route) => route.fulfill({ json: [info()] }))
-  await page.route('**/api/gitlab/projects/AB', (route) => {
+  await page.route('**/api/repo-hosts', (route) => route.fulfill({ json: [info()] }))
+  await page.route('**/api/repo-hosts/AB', (route) => {
     override = route.request().method() === 'PUT' ? route.request().postDataJSON().path : null
     return route.fulfill({ json: info() })
   })
-  await page.route('**/api/gitlab/projects/AB/check', (route) =>
+  await page.route('**/api/repo-hosts/AB/check', (route) =>
     route.fulfill({
-      json: { id: 1, path: info().effective, web_url: 'u', default_branch: 'main' },
+      json: { provider: 'gitlab', path: info().path, web_url: 'u', default_branch: 'main' },
     }),
   )
 

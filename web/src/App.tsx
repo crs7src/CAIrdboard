@@ -3,6 +3,7 @@ import Layout from './Layout'
 import AiSettings from './pages/AiSettings'
 import CardDetail from './pages/CardDetail'
 import Changes from './pages/Changes'
+import GitHubSettings from './pages/GitHubSettings'
 import GitLabSettings from './pages/GitLabSettings'
 import Home from './pages/Home'
 import TestAppsSettings from './pages/TestAppsSettings'
@@ -24,6 +25,7 @@ export default function App() {
           <Route path="ai" element={<AiSettings />} />
           <Route path="skills" element={<SkillsSettings />} />
           <Route path="gitlab" element={<GitLabSettings />} />
+          <Route path="github" element={<GitHubSettings />} />
           <Route path="test-apps" element={<TestAppsSettings />} />
         </Route>
       </Route>

@@ -503,41 +503,47 @@ export async function submitFeedback(key: string): Promise<FeedbackRun> {
   return response.json()
 }
 
-export interface GitLabStatus {
+export type RepoProvider = 'gitlab' | 'github'
+
+export interface HostStatus {
   configured: boolean
   connected: boolean
   user: string | null
   url: string
 }
 
-export interface GitLabCredentialsUpdate {
+export interface HostCredentialsUpdate {
   url?: string
   token?: string
 }
 
-export interface GitLabProjectInfo {
+export interface RepoHostInfo {
   project: string
   repo: string
-  detected: string | null
-  override: string | null
-  effective: string | null
+  provider: RepoProvider | null
+  path: string | null
+  source: 'override' | 'origin' | null
+  detected: { provider: RepoProvider; path: string } | null
 }
 
-export interface GitLabProjectCheck {
-  id: number
+export interface RepoHostCheck {
+  provider: RepoProvider
   path: string
   web_url: string
   default_branch: string | null
 }
 
-export async function fetchGitLabStatus(): Promise<GitLabStatus> {
-  const response = await fetch('/api/gitlab/status')
+export async function fetchHostStatus(provider: RepoProvider): Promise<HostStatus> {
+  const response = await fetch(`/api/${provider}/status`)
   if (!response.ok) throw await failure(response)
   return response.json()
 }
 
-export async function saveGitLabCredentials(update: GitLabCredentialsUpdate): Promise<{ user: string }> {
-  const response = await fetch('/api/gitlab/credentials', {
+export async function saveHostCredentials(
+  provider: RepoProvider,
+  update: HostCredentialsUpdate,
+): Promise<{ user: string }> {
+  const response = await fetch(`/api/${provider}/credentials`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(update),
@@ -546,29 +552,38 @@ export async function saveGitLabCredentials(update: GitLabCredentialsUpdate): Pr
   return response.json()
 }
 
-export async function fetchGitLabProjects(): Promise<GitLabProjectInfo[]> {
-  const response = await fetch('/api/gitlab/projects')
+export async function fetchRepoHosts(): Promise<RepoHostInfo[]> {
+  const response = await fetch('/api/repo-hosts')
   if (!response.ok) throw await failure(response)
   return response.json()
 }
 
-export async function setGitLabProject(project: string, path: string | null): Promise<GitLabProjectInfo> {
+export async function fetchRepoHost(project: string): Promise<RepoHostInfo> {
+  const response = await fetch(`/api/repo-hosts/${project}`)
+  if (!response.ok) throw await failure(response)
+  return response.json()
+}
+
+export async function setRepoHost(
+  project: string,
+  mapping: { provider: RepoProvider; path: string } | null,
+): Promise<RepoHostInfo> {
   const response = await fetch(
-    `/api/gitlab/projects/${project}`,
-    path === null
+    `/api/repo-hosts/${project}`,
+    mapping === null
       ? { method: 'DELETE' }
       : {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path }),
+          body: JSON.stringify(mapping),
         },
   )
   if (!response.ok) throw await failure(response)
   return response.json()
 }
 
-export async function checkGitLabProject(project: string): Promise<GitLabProjectCheck> {
-  const response = await fetch(`/api/gitlab/projects/${project}/check`)
+export async function checkRepoHost(project: string): Promise<RepoHostCheck> {
+  const response = await fetch(`/api/repo-hosts/${project}/check`)
   if (!response.ok) throw await failure(response)
   return response.json()
 }
@@ -582,7 +597,8 @@ export interface MergeRequest {
   branch: string
   target_branch: string
   title: string
-  gitlab_project: string
+  provider: RepoProvider
+  host_project: string
   mr_iid: number | null
   mr_url: string | null
   updated_existing: boolean

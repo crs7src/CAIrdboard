@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     gitlab_url: str = ""
     gitlab_token: str = ""
     gitlab_credentials_file: Path = Path("data/gitlab.json")
+    # The API URL; for GitHub Enterprise use https://HOST/api/v3.
+    github_url: str = "https://api.github.com"
+    github_token: str = ""
+    github_credentials_file: Path = Path("data/github.json")
     ai_config_file: Path = Path("data/ai_config.json")
     db_file: Path = Path("data/cairdboard.db")
     # Folders of JSON files written before the SQLite database; imported once at startup.
@@ -41,9 +45,14 @@ class Settings(BaseSettings):
     def gitlab_configured(self) -> bool:
         return bool(self.gitlab_url and self.gitlab_token)
 
+    @property
+    def github_configured(self) -> bool:
+        return bool(self.github_url and self.github_token)
+
 
 CREDENTIAL_FIELDS = ("jira_base_url", "jira_email", "jira_api_token")
 GITLAB_FIELDS = ("gitlab_url", "gitlab_token")
+GITHUB_FIELDS = ("github_url", "github_token")
 
 
 def read_saved_credentials(
@@ -74,4 +83,5 @@ def get_settings() -> Settings:
     settings = Settings()
     saved = read_saved_credentials(settings.jira_credentials_file)
     saved |= read_saved_credentials(settings.gitlab_credentials_file, GITLAB_FIELDS)
+    saved |= read_saved_credentials(settings.github_credentials_file, GITHUB_FIELDS)
     return settings.model_copy(update=saved)

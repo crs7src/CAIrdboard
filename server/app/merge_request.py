@@ -1,13 +1,14 @@
 from datetime import UTC, datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, Field
 
-from app import gitlab
+from app import hosting
 from app.config import Settings
 from app.db import RunStore
 from app.implementer import Implementation, ImplementationError, _git
 from app.jira import Card
+from app.remotes import HostError
 
 PUSH_TIMEOUT = 300
 
@@ -24,7 +25,11 @@ class MergeRequest(BaseModel):
     branch: str
     target_branch: str
     title: str
-    gitlab_project: str
+    provider: hosting.Provider = "gitlab"
+    # Runs stored before GitHub support called this gitlab_project.
+    host_project: str = Field(
+        validation_alias=AliasChoices("host_project", "gitlab_project")
+    )
     head: str | None = None
     mr_iid: int | None = None
     mr_url: str | None = None
@@ -49,7 +54,13 @@ class MergeRequestStore(RunStore[MergeRequest]):
     kind = "mr"
     model = MergeRequest
 
-    def create(self, key: str, impl: Implementation, gitlab_project: str):
+    def create(
+        self,
+        key: str,
+        impl: Implementation,
+        provider: hosting.Provider,
+        host_project: str,
+    ):
         branch = impl.branch or ""
 
         def build(version: int, stamp: str):
@@ -61,7 +72,8 @@ class MergeRequestStore(RunStore[MergeRequest]):
                 branch=branch,
                 target_branch=impl.base_branch or "main",
                 title=title_for(branch),
-                gitlab_project=gitlab_project,
+                provider=provider,
+                host_project=host_project,
                 created_at=stamp,
                 updated_at=stamp,
             )
@@ -142,23 +154,24 @@ async def run_merge_request(
             f"refs/heads/{run.branch}:refs/heads/{run.branch}",
             timeout=PUSH_TIMEOUT,
         )
-        existing = await gitlab.find_open_merge_request(
-            settings, run.gitlab_project, run.branch
+        existing = await hosting.find_open(
+            settings, run.provider, run.host_project, run.branch
         )
         if existing:
             mr, run.updated_existing = existing, True
         else:
             description = await build_description(runner, repo, impl, run.branch, card)
-            mr = await gitlab.create_merge_request(
+            mr = await hosting.create(
                 settings,
-                run.gitlab_project,
+                run.provider,
+                run.host_project,
                 run.branch,
                 run.target_branch,
                 run.title,
                 description,
             )
         run.mr_iid, run.mr_url, run.state = mr.iid, mr.web_url, "created"
-    except (ImplementationError, gitlab.GitLabError) as e:
+    except (ImplementationError, HostError) as e:
         run.state, run.error = "failed", str(e)
     except Exception as e:  # noqa: BLE001 - record any failure on the run
         run.state, run.error = "failed", f"Unexpected error: {e}"
