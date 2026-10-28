@@ -55,6 +55,17 @@ def _states(store, recover) -> dict[str, str]:
     return states
 
 
+def _implementation_states(settings: Settings) -> dict[str, str]:
+    """Implementation states; a card whose feedback changes are being made is running."""
+    states = _states(
+        implementer.ImplementationStore(_db(settings)), implementer.recover_stale
+    )
+    for key in feedback.ACTIVE:
+        if key in states:
+            states[key] = "running"
+    return states
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     import_legacy_files(get_settings())
@@ -373,9 +384,7 @@ def plan_states(settings: SettingsDep) -> dict[str, str]:
 @app.get("/api/implementations")
 def implementation_states(settings: SettingsDep) -> dict[str, str]:
     """Latest implementation state for every card that has one."""
-    return _states(
-        implementer.ImplementationStore(_db(settings)), implementer.recover_stale
-    )
+    return _implementation_states(settings)
 
 
 class PlanRequest(BaseModel):
@@ -1401,9 +1410,7 @@ async def get_project(key: str, settings: SettingsDep) -> projects.Project:
     db = _db(settings)
     states = {
         "plan": _states(planner.PlanStore(db), planner.recover_stale),
-        "implementation": _states(
-            implementer.ImplementationStore(db), implementer.recover_stale
-        ),
+        "implementation": _implementation_states(settings),
         "review": _states(reviewer.ReviewStore(db), reviewer.recover_stale),
         "test": _states(_test_store(settings), tester.recover_stale),
     }
