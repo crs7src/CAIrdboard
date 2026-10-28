@@ -212,3 +212,19 @@ async def test_error_detail_is_surfaced(env):
     )
     with pytest.raises(github.GitHubError, match="already exists"):
         await github.create_pull_request(settings, "me/app", "b", "main", "T", "D")
+
+
+@respx.mock
+async def test_field_errors_without_a_message_are_readable():
+    from app.config import Settings
+
+    settings = Settings(github_url=API, github_token=TOKEN)
+    respx.post(f"{API}/repos/me/app/pulls").respond(
+        422,
+        json={
+            "message": "Validation Failed",
+            "errors": [{"resource": "PullRequest", "field": "base", "code": "invalid"}],
+        },
+    )
+    with pytest.raises(github.GitHubError, match="PullRequest base is invalid"):
+        await github.create_pull_request(settings, "me/app", "b", "main", "T", "D")

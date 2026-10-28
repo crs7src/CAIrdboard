@@ -16,7 +16,7 @@ from test_implementation import (
 )
 from test_review import BRANCH, make_impl
 
-from app import merge_request
+from app import implementer, merge_request
 from app.main import app, get_runner
 from app.planner import run_command
 
@@ -210,3 +210,26 @@ def test_github_creates_a_pull_request(client, env, monkeypatch):
     sent = json.loads(create.calls.last.request.content)
     assert sent["head"] == BRANCH and sent["base"] == "main"
     assert "remove_source_branch" not in sent
+
+
+@respx.mock
+def test_a_target_missing_on_origin_falls_back_to_the_default_branch(client, env):
+    tmp_path, work = env
+    mock_jira()
+    impl = ready(tmp_path, work)
+    impl.base_branch = "develop"  # never pushed to origin
+    implementer.ImplementationStore(db()).save(impl)
+    respx.get(MR_API).respond(json=[])
+    respx.get(f"{GL}/api/v4/projects/grp%2Fapp").respond(
+        json={
+            "id": 1,
+            "path_with_namespace": "grp/app",
+            "web_url": f"{GL}/grp/app",
+            "default_branch": "main",
+        }
+    )
+    create = respx.post(MR_API).respond(201, json=CREATED)
+    assert client.post("/api/cards/AB-1/merge-request").status_code == 202
+    run = client.get("/api/cards/AB-1/merge-request").json()
+    assert run["state"] == "created" and run["target_branch"] == "main"
+    assert json.loads(create.calls.last.request.content)["target_branch"] == "main"

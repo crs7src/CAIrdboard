@@ -27,6 +27,9 @@ branch for you.
 - Do not modify files that are unrelated to the plan.
 - Never commit secrets, credentials, `.env` files or generated data files.
 - Do not call real external services (Jira, AI CLIs, etc.) from tests; mock them.
+- **Every numbered step of the plan gets its own commit, made as soon as that step is
+  done.** Never batch several steps into one commit, never leave work for a final
+  catch-all commit, and never start step N+1 with step N uncommitted.
 
 ## Follow the repository's conventions
 
@@ -50,15 +53,19 @@ not say otherwise, apply these defaults:
 
 1. Read the plan and the card. If the card has comments after a Reopened status,
    they are the primary instructions for the rework; the description is background.
-2. Work through the plan **one step at a time, in order**.
+2. Number the plan's steps (N steps in total) and keep that list as your checklist.
+   Work through them **one step at a time, in order**.
 3. After each step is complete (code, tests and checks for that step passing),
    **commit immediately** before starting the next step:
    - Stage only the files that belong to the step (`git add <files>`).
    - Commit message: `<CARD-KEY>: step <N> - <short description of the step>`.
    - Add this trailer to every commit message:
      `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>`
-   - One commit per plan step. If a step turns out to need nothing, skip it and say
-     so in the report instead of making an empty commit.
+   - One commit per plan step, no exceptions. If a step turns out to need no changes
+     (already done by an earlier step, or nothing to do), still record it with
+     `git commit --allow-empty` and say why in the message body.
+   - Then run `git log --oneline <base>..HEAD` and confirm it now shows a
+     `step <N>` commit before you move on. If it does not, fix that first.
 4. When every step is committed, **review your own work against the original plan**:
    - Run `git diff <base>..HEAD` (the base commit is given to you) and walk through
      the plan item by item.
@@ -66,7 +73,10 @@ not say otherwise, apply these defaults:
      unrequested changes, missing tests, and failing checks.
    - Fix every gap you find, run the checks again, and commit the fixes as
      `<CARD-KEY>: review fix - <short description>`.
-5. Make sure the working tree is clean (everything committed) when you finish.
+5. Final check before you finish: `git log --oneline <base>..HEAD` must contain a
+   `step 1` through `step N` commit for every plan step, and `git status` must be
+   clean. If a step commit is missing, make it now (staging whatever belongs to that
+   step, or an empty commit) rather than reporting it as missing.
 
 ## Final report
 
@@ -74,8 +84,8 @@ Your last message is stored as the implementation report. Output Markdown with t
 sections and nothing else:
 
 - **Summary** - what was implemented.
-- **Steps** - each plan step with its commit subject and status (done / skipped /
-  partial) and why.
+- **Steps** - each plan step with its commit SHA and subject and status (done /
+  no changes needed / partial) and why.
 - **Review against the plan** - what matched, what you fixed during review, and
   anything still missing.
 - **Assumptions and open questions** - every assumption you made without being able
