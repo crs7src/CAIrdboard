@@ -101,7 +101,7 @@ export default function AiSettings() {
             label="Automatically start the review when implementation completes"
           />
           <FormHelperText>
-            When off, start the review yourself with the Review button.
+            Also applies after review-comment and manual-testing fixes. When off, start the review yourself with the Review button.
           </FormHelperText>
         </Box>
         <Typography variant="h6" component="h2">

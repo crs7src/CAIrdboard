@@ -535,23 +535,44 @@ async def _implement_then_review(
         settings.implement_timeout_seconds,
         runner,
     )
-    # The implementer has released the card and repo by now. The setting is
-    # read here so a change made while the run was going is honoured.
+    await _auto_review(settings, runner, run.card_key, run.version, store)
+
+
+async def _auto_review(
+    settings: Settings,
+    runner: object,
+    key: str,
+    version: int,
+    store: object,
+    done_state: str = "completed",
+) -> None:
+    """Start a review after a run that changed code, if the setting is on.
+
+    The run has released the card and repo by now. The setting is read here so
+    a change made while the run was going is honoured.
+    """
     try:
-        latest = store.latest(run.card_key)
+        latest = store.latest(key)
         if (
             latest is None
-            or latest.version != run.version
-            or latest.state != "completed"
+            or latest.version != version
+            or latest.state != done_state
             or not load_ai_config(settings.ai_config_file).auto_review
         ):
             return
-        _, args = await _prepare_review(run.card_key, settings, runner)
+        _, args = await _prepare_review(key, settings, runner)
         await reviewer.run_review(*args)
     except Exception:
         logging.getLogger(__name__).warning(
-            "Automatic review of %s was not started", run.card_key, exc_info=True
+            "Automatic review of %s was not started", key, exc_info=True
         )
+
+
+async def _feedback_then_review(
+    settings: Settings, runner: object, store: feedback.FeedbackStore, run, *args
+) -> None:
+    await feedback.run_feedback(store, run, *args)
+    await _auto_review(settings, runner, run.card_key, run.version, store, "done")
 
 
 @app.get("/api/cards/{key}/implementation")
@@ -761,7 +782,9 @@ def _start_feedback(
     feedback.ACTIVE.add(key)
     implementer.ACTIVE_REPOS.add(repo)
     background.add_task(
-        feedback.run_feedback,
+        _feedback_then_review,
+        settings,
+        runner,
         store,
         run,
         impl,

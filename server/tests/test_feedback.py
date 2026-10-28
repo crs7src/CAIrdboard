@@ -196,6 +196,27 @@ def test_submit_runs_the_agent_and_resolves_the_comments(client, env, ai):
 
 
 @respx.mock
+@pytest.mark.parametrize("auto", [True, False])
+def test_feedback_run_starts_a_review_only_when_auto_review_is_on(
+    client, env, ai, auto
+):
+    from app.ai_config import AiConfig, save_ai_config
+
+    tmp_path, work = env
+    ready(tmp_path, work)
+    save_ai_config(
+        tmp_path / "ai.json",
+        AiConfig(project_repos={"AB": str(work)}, auto_review=auto),
+    )
+    client.post("/api/cards/AB-1/feedback/comments", json={"text": "x"})
+    assert client.post("/api/cards/AB-1/feedback/submit").status_code == 202
+    assert client.get("/api/cards/AB-1/feedback").json()["run"]["state"] == "done"
+    review = reviewer.ReviewStore(db()).latest("AB-1")
+    assert (review is not None) is auto
+    assert implementer.ACTIVE_REPOS == set() and reviewer.ACTIVE == set()
+
+
+@respx.mock
 def test_failed_run_keeps_comments_pending(client, env, ai):
     tmp_path, work = env
     ready(tmp_path, work)

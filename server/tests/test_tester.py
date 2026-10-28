@@ -722,7 +722,9 @@ def test_api_test_feedback_stops_the_app_and_runs_the_code_fixer(client, env, ai
     assert [(c["origin"], c["status"]) for c in data["comments"]] == [
         ("testing", "resolved")
     ]
-    assert "[manual testing] Save is broken" in prompt_of(ai)
+    # the fix run is followed by the automatic review, so look at the call before it
+    args = ai.ai_calls[-2]
+    assert "[manual testing] Save is broken" in args[args.index("-p") + 1]
     assert str(work) not in implementer.ACTIVE_REPOS
 
 
