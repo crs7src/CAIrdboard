@@ -528,14 +528,17 @@ def test_no_review_after_a_failed_implementation(client, env, ai):
 def test_refused_auto_review_keeps_the_implementation_completed(
     client, env, monkeypatch
 ):
-    from app import main, reviewer
+    from fastapi import HTTPException
+
+    from app import reviewer
+    from app.routes import implementations
 
     tmp_path, _ = env
 
     async def refuse(*args, **kwargs):
-        raise main.HTTPException(409, "busy")
+        raise HTTPException(409, "busy")
 
-    monkeypatch.setattr(main, "_prepare_review", refuse)
+    monkeypatch.setattr(implementations, "_prepare_review", refuse)
     mock_jira()
     approve_plan(tmp_path)
     assert client.post("/api/cards/AB-1/implementation").status_code == 202
