@@ -8,7 +8,7 @@ import CardContent from '@mui/material/CardContent'
 import Chip from '@mui/material/Chip'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import StepButton, { type StepStatus } from './StepButton'
@@ -35,6 +35,8 @@ import {
   type PlanState,
   type ReviewState,
 } from '../api'
+
+const POLL_MS = 3000
 
 function isEligible(config: AiConfig | null, status: string, source?: string) {
   if (source === 'github' && status === 'Open') return true
@@ -99,6 +101,7 @@ export default function Home() {
 
   const navigate = useNavigate()
   const [actionError, setActionError] = useState<string | null>(null)
+  const refreshing = useRef(false)
 
   async function run(fn: () => Promise<unknown>, onDone: () => void) {
     setActionError(null)
@@ -110,6 +113,30 @@ export default function Home() {
     }
   }
 
+  const refreshStates = useCallback(async () => {
+    if (refreshing.current) return
+    refreshing.current = true
+    try {
+      const [p, im, rv, ts, ap, mr] = await Promise.all([
+        fetchPlanStates().catch(() => null),
+        fetchImplementationStates().catch(() => null),
+        fetchReviewStates().catch(() => null),
+        fetchTestStates().catch(() => null),
+        fetchTestApprovals().catch(() => null),
+        fetchMergeRequestStates().catch(() => null),
+      ])
+      // A failed poll keeps the last known state instead of clearing it.
+      if (p) setPlans(p)
+      if (im) setImpls(im)
+      if (rv) setReviews(rv)
+      if (ts) setTests(ts)
+      if (ap) setApprovals(ap)
+      if (mr) setMrs(mr)
+    } finally {
+      refreshing.current = false
+    }
+  }, [])
+
   const sync = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -118,35 +145,37 @@ export default function Home() {
       setCards(list.cards)
       setWarning(list.warning)
       // Plan info only decorates the list, so failures here are not fatal.
-      const [p, im, rv, ts, cfg, tp, ap, mr] = await Promise.all([
-        fetchPlanStates().catch(() => ({})),
-        fetchImplementationStates().catch(() => ({})),
-        fetchReviewStates().catch(() => ({})),
-        fetchTestStates().catch(() => ({})),
+      const [cfg, tp] = await Promise.all([
         fetchAiConfig().catch(() => null),
         fetchConfiguredTestProjects().catch(() => []),
-        fetchTestApprovals().catch(() => []),
-        fetchMergeRequestStates().catch(() => ({})),
+        refreshStates(),
       ])
-      setPlans(p)
-      setImpls(im)
-      setReviews(rv)
-      setTests(ts)
       setConfig(cfg)
       setTestProjects(tp)
-      setApprovals(ap)
-      setMrs(mr)
     } catch (e) {
       setError((e as Error).message)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [refreshStates])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     sync()
   }, [sync])
+
+  const active =
+    Object.values(plans).includes('running') ||
+    Object.values(impls).includes('running') ||
+    Object.values(reviews).includes('running') ||
+    Object.values(tests).includes('preparing') ||
+    Object.values(mrs).includes('running')
+
+  useEffect(() => {
+    if (!active) return
+    const id = setInterval(refreshStates, POLL_MS)
+    return () => clearInterval(id)
+  }, [active, refreshStates])
 
   // An ineligible status is always In Review/Done; otherwise a plan in any state means In Progress.
   // If the config could not be loaded, every card is treated as eligible.
