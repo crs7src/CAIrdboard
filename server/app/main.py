@@ -542,14 +542,13 @@ def review_states(settings: SettingsDep) -> dict[str, str]:
     return _states(reviewer.ReviewStore(_db(settings)), reviewer.recover_stale)
 
 
-@app.post("/api/cards/{key}/review", status_code=202)
-async def start_review(
-    key: str,
-    settings: SettingsDep,
-    runner: RunnerDep,
-    background: BackgroundTasks,
-) -> reviewer.Review:
-    """Review the completed implementation in a fresh AI session; it may commit fixes."""
+async def _prepare_review(
+    key: str, settings: Settings, runner: object
+) -> tuple[reviewer.Review, tuple]:
+    """Check a review can start, create the run and claim the card and repo.
+
+    Returns the run and the arguments for ``reviewer.run_review``.
+    """
     key = _valid_key(key)
     impl_store = implementer.ImplementationStore(_db(settings))
     impl = impl_store.latest(key)
@@ -577,8 +576,7 @@ async def start_review(
     run = store.create(key, impl)
     reviewer.ACTIVE.add(key)
     implementer.ACTIVE_REPOS.add(repo)
-    background.add_task(
-        reviewer.run_review,
+    return run, (
         store,
         run,
         impl,
@@ -589,6 +587,18 @@ async def start_review(
         settings.review_timeout_seconds,
         runner,
     )
+
+
+@app.post("/api/cards/{key}/review", status_code=202)
+async def start_review(
+    key: str,
+    settings: SettingsDep,
+    runner: RunnerDep,
+    background: BackgroundTasks,
+) -> reviewer.Review:
+    """Review the completed implementation in a fresh AI session; it may commit fixes."""
+    run, args = await _prepare_review(key, settings, runner)
+    background.add_task(reviewer.run_review, *args)
     return run
 
 
