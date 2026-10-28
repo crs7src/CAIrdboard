@@ -49,6 +49,12 @@ export async function startMergeRequest(key: string, edits?: Partial<MergeReques
   return response.json()
 }
 
+export async function fetchMergeRequestUrls(): Promise<Record<string, string>> {
+  const response = await fetch('/api/merge-requests/urls')
+  if (!response.ok) throw await failure(response)
+  return response.json()
+}
+
 export async function fetchMergeRequestStates(): Promise<Record<string, MergeRequestState | 'outdated'>> {
   const response = await fetch('/api/merge-requests')
   if (!response.ok) throw await failure(response)
