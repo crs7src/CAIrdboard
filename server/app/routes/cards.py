@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections.abc import Awaitable
 
 from fastapi import APIRouter, HTTPException, Response
@@ -7,6 +8,7 @@ from app.core.ai_config import load_ai_config, save_ai_config
 from app.core.config import (
     Settings,
 )
+from app.core.db import JiraProjects
 from app.deps import (
     SettingsDep,
     _db,
@@ -16,6 +18,7 @@ from app.integrations import github, jira, remotes
 from app.integrations.remotes import HostError
 
 router = APIRouter()
+log = logging.getLogger(__name__)
 
 
 def _require_jira(settings: Settings) -> None:
@@ -50,8 +53,19 @@ async def _link_issue_repos(settings: Settings, cards: list[jira.Card]) -> None:
         save_ai_config(settings.ai_config_file, config)
 
 
+def remember_projects(settings: Settings, cards: list[jira.Card]) -> None:
+    """Record the Jira project keys of these cards for the New project form. Never
+    fails the request."""
+    try:
+        keys = {c.project for c in cards if c.source != "github"}
+        JiraProjects(_db(settings)).remember(keys)
+    except Exception:
+        log.exception("Could not remember Jira project keys")
+
+
 async def _load_card(settings: Settings, key: str) -> jira.Card:
     card = await _fetch_card(settings, key)
+    remember_projects(settings, [card])
     await _link_issue_repos(settings, [card])
     return card
 
@@ -105,6 +119,7 @@ async def _load_cards(settings: Settings) -> tuple[list[jira.Card], list[str]]:
             raise result
     if errors and len(errors) == len(results):
         raise HTTPException(502, "; ".join(errors))
+    remember_projects(settings, found)
     await _link_issue_repos(settings, found)
     return found, errors
 

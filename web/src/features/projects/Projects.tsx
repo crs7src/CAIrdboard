@@ -1,6 +1,7 @@
 import Accordion from '@mui/material/Accordion'
 import AccordionDetails from '@mui/material/AccordionDetails'
 import AccordionSummary from '@mui/material/AccordionSummary'
+import Autocomplete from '@mui/material/Autocomplete'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
@@ -21,7 +22,7 @@ import Typography from '@mui/material/Typography'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUnchecked'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link as RouterLink } from 'react-router-dom'
 import {
   AI_PROVIDER_LABELS,
@@ -30,6 +31,7 @@ import {
   createProject,
   deleteProject,
   fetchAiProviders,
+  fetchJiraProjectKeys,
   fetchProject,
   fetchProjects,
   updateProject,
@@ -178,6 +180,14 @@ function ProjectForm({ project, onClose, onSaved }: FormProps) {
   const defaultProvider = providers.find((p) => p.is_default)
 
   const jira = kind !== 'github'
+  const wantKeyOptions = jira && !editing
+  const keysFetched = useRef(false)
+  const [keyOptions, setKeyOptions] = useState<string[]>([])
+  useEffect(() => {
+    if (!wantKeyOptions || keysFetched.current) return
+    keysFetched.current = true
+    fetchJiraProjectKeys().then(setKeyOptions, () => setKeyOptions([]))
+  }, [wantKeyOptions])
   const provider = kind === 'jira_gitlab' ? 'gitlab' : 'github'
   const valid =
     name.trim() && repo.trim() && (!jira || editing || key.trim()) && (jira || hostPath.trim())
@@ -223,12 +233,19 @@ function ProjectForm({ project, onClose, onSaved }: FormProps) {
             ))}
           </TextField>
           {jira && (
-            <TextField
-              label="Jira project key"
-              helperText="The prefix of the card keys, like ABC for ABC-123."
-              value={key}
+            <Autocomplete
+              freeSolo
+              options={keyOptions}
+              inputValue={key}
               disabled={editing}
-              onChange={(e) => setKey(e.target.value.toUpperCase())}
+              onInputChange={(_, value) => setKey(value.toUpperCase())}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Jira project key"
+                  helperText="Pick one of your cards' projects, or type the prefix of your card keys."
+                />
+              )}
             />
           )}
           <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>

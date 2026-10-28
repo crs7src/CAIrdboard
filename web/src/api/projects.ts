@@ -56,6 +56,12 @@ export async function fetchProjects(): Promise<Project[]> {
   return response.json()
 }
 
+export async function fetchJiraProjectKeys(): Promise<string[]> {
+  const response = await fetch('/api/jira-project-keys')
+  if (!response.ok) throw await failure(response)
+  return response.json()
+}
+
 export async function fetchProject(key: string): Promise<Project> {
   const response = await fetch(`/api/projects/${key}`)
   if (!response.ok) throw await failure(response)

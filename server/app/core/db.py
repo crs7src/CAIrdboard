@@ -3,7 +3,7 @@
 import re
 import sqlite3
 import threading
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -41,6 +41,10 @@ CREATE TABLE IF NOT EXISTS test_approvals (
 CREATE TABLE IF NOT EXISTS archived_cards (
     card_key TEXT PRIMARY KEY,
     archived_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS jira_projects (
+    project_key TEXT PRIMARY KEY,
+    seen_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS gitlab_projects (
     project TEXT PRIMARY KEY,
@@ -258,6 +262,32 @@ class Approvals:
         with self.db.connect() as conn:
             rows = conn.execute(
                 "SELECT card_key FROM test_approvals ORDER BY card_key"
+            ).fetchall()
+        return [r[0] for r in rows]
+
+
+class JiraProjects:
+    """Jira project keys seen on cards. Additive only: nothing is ever removed."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    def remember(self, keys: Iterable[str]) -> None:
+        wanted = dict.fromkeys(k.strip().upper() for k in keys if k and k.strip())
+        if not wanted:
+            return
+        stamp = now()
+        with self.db.connect() as conn:
+            conn.executemany(
+                "INSERT OR IGNORE INTO jira_projects (project_key, seen_at) "
+                "VALUES (?, ?)",
+                [(k, stamp) for k in wanted],
+            )
+
+    def keys(self) -> list[str]:
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                "SELECT project_key FROM jira_projects ORDER BY project_key"
             ).fetchall()
         return [r[0] for r in rows]
 

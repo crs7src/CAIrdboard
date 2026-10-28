@@ -119,6 +119,25 @@ test('add a Jira + GitHub project and a GitHub-only project, edit and delete', a
   expect(store.map((p) => p.key)).toEqual(['AB'])
 })
 
+test('pick a suggested Jira project key when creating a project', async ({ page }) => {
+  const store: Stored[] = []
+  await mockProjects(page, store)
+  await page.route('**/api/jira-project-keys', (route) => route.fulfill({ json: ['AB', 'LSCDOCS'] }))
+  await page.goto('/projects')
+  await page.getByRole('button', { name: 'Add project' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByLabel('Project name').fill('Docs')
+  await dialog.getByRole('combobox', { name: 'Type' }).click()
+  await page.getByRole('option', { name: 'Jira + GitHub' }).click()
+  await dialog.getByLabel('Jira project key').click()
+  await page.getByRole('option', { name: 'LSCDOCS' }).click()
+  await dialog.getByLabel('Repo path').fill('/repos/docs')
+  await dialog.getByLabel('GitHub project path').fill('me/docs')
+  await dialog.getByRole('button', { name: 'Create' }).click()
+  await expect(page.getByRole('list', { name: 'Setup checklist' })).toBeVisible()
+  expect(store[0]).toMatchObject({ key: 'LSCDOCS', jira: true })
+})
+
 test('expand a project, see its cards and open one', async ({ page }) => {
   const store: Stored[] = [
     { key: 'AB', name: 'Alpha', repo_path: '/repos/alpha', jira: true, provider: 'github', path: 'me/alpha' },

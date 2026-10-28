@@ -31,6 +31,7 @@ get /api/fs/dirs
 get /api/github/status
 get /api/gitlab/status
 get /api/implementations
+get /api/jira-project-keys
 get /api/jira/status
 get /api/merge-requests
 get /api/merge-requests/urls

@@ -9,7 +9,7 @@ from app.core.ai_config import AiConfig, load_ai_config, save_ai_config
 from app.core.config import (
     Settings,
 )
-from app.core.db import Archive
+from app.core.db import Archive, JiraProjects
 from app.deps import (
     SettingsDep,
     _db,
@@ -116,6 +116,16 @@ async def list_projects(settings: SettingsDep) -> list[projects.Project]:
     """Every project (a repo mapping), without cards so Jira is not called."""
     config = load_ai_config(settings.ai_config_file)
     return [await _project(settings, config, k) for k in sorted(config.project_repos)]
+
+
+@router.get("/api/jira-project-keys")
+def jira_project_keys(settings: SettingsDep) -> list[str]:
+    """Jira project keys seen on cards and not yet set up as a project. Reads the
+    stored keys only (no Jira call) and never changes them."""
+    config = load_ai_config(settings.ai_config_file)
+    configured = {k.upper() for k in config.project_repos}
+    stored = JiraProjects(_db(settings)).keys()
+    return [k for k in stored if k not in configured]
 
 
 @router.get("/api/projects/{key}")

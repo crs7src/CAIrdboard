@@ -5,7 +5,7 @@ import pytest
 from dbutil import db
 
 from app.core.config import Settings
-from app.core.db import Approvals, Archive, Database
+from app.core.db import Approvals, Archive, Database, JiraProjects
 from app.core.legacy_import import import_legacy_files
 from app.stages import feedback, implementer, planner, reviewer, tester
 
@@ -256,3 +256,26 @@ def test_archive_add_remove_and_list_are_idempotent():
     assert archive.keys() == ["AB-2"]
     with pytest.raises(ValueError):
         archive.add("bad")
+
+
+def test_jira_projects_are_additive_and_normalised():
+    store = JiraProjects(db())
+    store.remember(["ab", "AB", " AB ", ""])
+    assert store.keys() == ["AB"]
+    store.remember(["CD"])
+    store.remember([])
+    store.remember(["CD"])
+    assert store.keys() == ["AB", "CD"]
+    assert not any(hasattr(store, n) for n in ("remove", "clear", "replace", "delete"))
+
+
+def test_jira_projects_keep_original_seen_at():
+    database = db()
+    store = JiraProjects(database)
+    store.remember(["AB"])
+    with database.connect() as conn:
+        conn.execute("UPDATE jira_projects SET seen_at = 'old'")
+    store.remember(["AB"])
+    with database.connect() as conn:
+        rows = conn.execute("SELECT seen_at FROM jira_projects").fetchall()
+    assert [r[0] for r in rows] == ["old"]

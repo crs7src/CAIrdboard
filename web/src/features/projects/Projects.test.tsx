@@ -159,6 +159,53 @@ test('the form sends the Jira + GitLab payload', async () => {
   })
 })
 
+test('the key field suggests known Jira projects and sends the chosen one', async () => {
+  const fetchMock = mockApi({
+    '/api/projects': [{ body: [] }, { body: [project({ key: 'LSCDOCS' })] }],
+    '/api/jira-project-keys': { body: ['AB', 'LSCDOCS'] },
+    'POST /api/projects': { status: 201, body: project({ key: 'LSCDOCS', cards: null }) },
+    '/api/projects/LSCDOCS': { body: project({ key: 'LSCDOCS', cards: [] }) },
+  })
+  renderPage()
+  await userEvent.click(await screen.findByRole('button', { name: 'Add project' }))
+  const dialog = screen.getByRole('dialog')
+  await userEvent.type(within(dialog).getByLabelText('Project name'), 'Docs')
+  await userEvent.click(within(dialog).getByLabelText('Jira project key'))
+  expect(await screen.findByRole('option', { name: 'AB' })).toBeInTheDocument()
+  await userEvent.click(screen.getByRole('option', { name: 'LSCDOCS' }))
+  await userEvent.type(within(dialog).getByLabelText('Repo path'), '/r/docs')
+  await userEvent.type(within(dialog).getByLabelText('GitLab project path'), 'g/p')
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Create' }))
+  await screen.findByRole('list', { name: 'Setup checklist' })
+  const post = fetchMock.mock.calls.find(([, i]) => i?.method === 'POST')!
+  expect(JSON.parse(String(post[1]?.body))).toMatchObject({ key: 'LSCDOCS' })
+})
+
+test('a failing key list still allows typing the key', async () => {
+  const fetchMock = mockApi({
+    '/api/projects': { body: [] },
+    '/api/jira-project-keys': { status: 502, body: { detail: 'down' } },
+  })
+  renderPage()
+  await userEvent.click(await screen.findByRole('button', { name: 'Add project' }))
+  const dialog = screen.getByRole('dialog')
+  await userEvent.type(within(dialog).getByLabelText('Jira project key'), 'ab')
+  expect(within(dialog).getByLabelText('Jira project key')).toHaveValue('AB')
+  expect(fetchMock.mock.calls.filter(([u]) => u === '/api/jira-project-keys')).toHaveLength(1)
+})
+
+test('the key list is not fetched when editing a project', async () => {
+  const fetchMock = mockApi({
+    '/api/projects': { body: [project()] },
+    '/api/projects/AB': { body: project({ cards: [] }) },
+  })
+  renderPage()
+  await userEvent.click(await screen.findByRole('button', { name: /Alpha/ }))
+  await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+  expect(within(screen.getByRole('dialog')).getByLabelText('Jira project key')).toBeDisabled()
+  expect(fetchMock.mock.calls.some(([u]) => u === '/api/jira-project-keys')).toBe(false)
+})
+
 test('GitHub only hides the Jira key, requires the repo, and sends no key', async () => {
   const fetchMock = mockApi({
     '/api/projects': [{ body: [] }, { body: [project({ key: 'GH_APP', jira: false })] }],
