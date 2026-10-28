@@ -438,6 +438,7 @@ export interface FeedbackCommentInput {
   line?: number | null
   side?: 'new' | 'old'
   code?: string | null
+  origin?: 'review' | 'testing'
 }
 
 export interface FeedbackComment {
@@ -447,6 +448,7 @@ export interface FeedbackComment {
   line: number | null
   side: 'new' | 'old'
   code: string | null
+  origin: 'review' | 'testing'
   status: 'pending' | 'resolved'
   resolved_in: number | null
   created_at: string
@@ -511,6 +513,16 @@ export async function deleteFeedbackComment(key: string, id: string): Promise<vo
 
 export async function submitFeedback(key: string): Promise<FeedbackRun> {
   const response = await fetch(`/api/cards/${key}/feedback/submit`, { method: 'POST' })
+  if (!response.ok) throw await failure(response)
+  return response.json()
+}
+
+export async function submitTestFeedback(key: string, message: string): Promise<FeedbackRun> {
+  const response = await fetch(`/api/cards/${key}/test/feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message }),
+  })
   if (!response.ok) throw await failure(response)
   return response.json()
 }

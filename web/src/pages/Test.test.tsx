@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, test, vi } from 'vitest'
-import { mockApi, testRun } from '../test-utils'
+import { feedbackRun, mockApi, testRun } from '../test-utils'
 
 const CONFIG = {
   project: 'AB',
@@ -20,6 +20,8 @@ afterEach(() => {
 const HEADER = /^Test (not started|starting the app|app running|stopped|failed)/
 const NONE = { status: 404, body: { detail: 'No test run exists for this card' } }
 const open = async () => userEvent.click(await screen.findByRole('button', { name: HEADER }))
+const openStartup = async () =>
+  userEvent.click(await screen.findByRole('button', { name: 'Start with AI / app startup issues' }))
 
 test('is collapsed with a start button; starting shows progress', async () => {
   const fetchMock = mockApi({
@@ -94,6 +96,7 @@ test('shows saved settings, and Start with AI asks the AI', async () => {
   render(<Test cardKey="AB-1" />, { wrapper: MemoryRouter })
   expect(await screen.findByText('saved settings')).toBeInTheDocument()
   await open()
+  await openStartup()
   await userEvent.click(await screen.findByRole('button', { name: 'Start with AI' }))
   const post = fetchMock.mock.calls.find(([, i]) => i?.method === 'POST')!
   expect(JSON.parse(String(post[1]?.body))).toEqual({ use_ai: true })
@@ -122,9 +125,10 @@ test('reporting a problem sends the message and shows the restart', async () => 
   })
   render(<Test cardKey="AB-1" />, { wrapper: MemoryRouter })
   await open()
-  const send = await screen.findByRole('button', { name: 'Send problem report' })
+  await openStartup()
+  const send = await screen.findByRole('button', { name: 'Send startup issue report' })
   expect(send).toBeDisabled()
-  await userEvent.type(screen.getByLabelText('Describe what is not running right'), 'login is blank')
+  await userEvent.type(screen.getByLabelText('Report an issue with the app startup'), 'login is blank')
   await userEvent.click(send)
   expect(await screen.findByText(/Fixing how the app starts/)).toBeInTheDocument()
   expect(screen.getByText(/Reported problem: login is blank/)).toBeInTheDocument()
@@ -147,6 +151,7 @@ test('Start test is disabled until start settings exist, but Start with AI works
   render(<Test cardKey="AB-1" />, { wrapper: MemoryRouter })
   await open()
   expect(await screen.findByRole('button', { name: 'Start test' })).toBeDisabled()
+  await openStartup()
   expect(screen.getByRole('button', { name: 'Start with AI' })).toBeEnabled()
 })
 
@@ -186,4 +191,51 @@ test('there is nothing to approve before a test has run', async () => {
   render(<Test cardKey="AB-1" />, { wrapper: MemoryRouter })
   await screen.findByRole('button', { name: HEADER })
   expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument()
+})
+
+test('Issues are sent to the code fixer and the run state is shown', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  const fetchMock = mockApi({
+    '/api/cards/AB-1/test': { body: testRun() },
+    '/api/cards/AB-1/feedback': [
+      { body: { comments: [], run: null } },
+      { body: { comments: [], run: feedbackRun({ state: 'done', commits: [{ sha: 'a', short: 'a', subject: 's' }] }) } },
+    ],
+    'POST /api/cards/AB-1/test/feedback': { status: 202, body: feedbackRun() },
+  })
+  render(<Test cardKey="AB-1" />, { wrapper: MemoryRouter })
+  await open()
+  const send = await screen.findByRole('button', { name: 'Send to code fixer' })
+  expect(send).toBeDisabled()
+  await userEvent.type(screen.getByLabelText('Issues'), 'button does nothing')
+  await userEvent.click(send)
+  expect(await screen.findByText(/An AI is fixing the reported issues/)).toBeInTheDocument()
+  expect(send).toBeDisabled()
+  const post = fetchMock.mock.calls.find(([u, i]) => String(u).endsWith('/test/feedback') && i?.method === 'POST')!
+  expect(JSON.parse(String(post[1]?.body))).toEqual({ message: 'button does nothing' })
+  await vi.advanceTimersByTimeAsync(2100)
+  expect(await screen.findByText(/Fixes made \(1 commit\)/)).toBeInTheDocument()
+})
+
+test('an Issues failure is shown as an error', async () => {
+  mockApi({
+    '/api/cards/AB-1/test': { body: testRun() },
+    'POST /api/cards/AB-1/test/feedback': { status: 409, body: { detail: 'A fix run is already active' } },
+  })
+  render(<Test cardKey="AB-1" />, { wrapper: MemoryRouter })
+  await open()
+  await userEvent.type(await screen.findByLabelText('Issues'), 'x')
+  await userEvent.click(screen.getByRole('button', { name: 'Send to code fixer' }))
+  expect(await screen.findByText('A fix run is already active')).toBeInTheDocument()
+})
+
+test('Issues cannot be sent while a fix is running', async () => {
+  mockApi({
+    '/api/cards/AB-1/test': { body: testRun() },
+    '/api/cards/AB-1/feedback': { body: { comments: [], run: feedbackRun() } },
+  })
+  render(<Test cardKey="AB-1" />, { wrapper: MemoryRouter })
+  await open()
+  await userEvent.type(await screen.findByLabelText('Issues'), 'x')
+  expect(screen.getByRole('button', { name: 'Send to code fixer' })).toBeDisabled()
 })
