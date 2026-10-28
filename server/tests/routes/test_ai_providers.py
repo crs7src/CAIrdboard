@@ -87,6 +87,34 @@ def test_model_only_without_key_is_saved_unverified(client, verify):
     assert verify == []
 
 
+def test_copilot_model_is_saved_listed_and_reset(client, ai_env, verify):
+    copilot = by_id(client)["copilot"]
+    assert copilot["models"] and copilot["model"] is None
+    r = client.put("/api/ai/providers/copilot/credentials", json={"model": "gpt-5"})
+    assert r.status_code == 200 and r.json()["model"] == "gpt-5"
+    assert load_ai_config(ai_env / "ai.json").provider_models == {"copilot": "gpt-5"}
+    assert verify == []
+    r = client.put("/api/ai/providers/copilot/credentials", json={"model": ""})
+    assert r.json()["model"] is None
+    assert load_ai_config(ai_env / "ai.json").provider_models == {}
+
+
+async def test_runner_adds_model_flag_for_copilot_only():
+    from app.ai import with_model
+    from app.stages.planner import CommandResult
+
+    seen = []
+
+    async def base(args, cwd, timeout):
+        seen.append(args)
+        return CommandResult(0, "", "")
+
+    await with_model(base, "copilot", "gpt-5")(["copilot", "-s"], ".", 1)
+    await with_model(base, "copilot", "gpt-5")(["git", "log"], ".", 1)
+    assert with_model(base, "copilot", None) is base
+    assert seen == [["copilot", "--model", "gpt-5", "-s"], ["git", "log"]]
+
+
 @pytest.mark.parametrize(
     ("pid", "body"),
     [

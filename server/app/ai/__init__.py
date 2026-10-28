@@ -31,12 +31,32 @@ class ProviderInfo:
     default_model: str | None
     # Whether it can run the agent stages (implement, review, feedback).
     supports_agent: bool
+    # Suggested models for the settings dropdown.
+    models: tuple[str, ...] = ()
 
 
 PROVIDERS: dict[str, ProviderInfo] = {
-    "copilot": ProviderInfo("copilot", "GitHub Copilot CLI", None, True),
-    "anthropic": ProviderInfo("anthropic", "Anthropic", "claude-sonnet-4-5", False),
-    "gemini": ProviderInfo("gemini", "Google Gemini", "gemini-2.5-pro", False),
+    "copilot": ProviderInfo(
+        "copilot",
+        "GitHub Copilot CLI",
+        None,
+        True,
+        ("claude-sonnet-4.5", "claude-sonnet-4", "gpt-5", "gpt-5-mini"),
+    ),
+    "anthropic": ProviderInfo(
+        "anthropic",
+        "Anthropic",
+        "claude-sonnet-4-5",
+        False,
+        ("claude-sonnet-4-5", "claude-opus-4-1", "claude-haiku-4-5"),
+    ),
+    "gemini": ProviderInfo(
+        "gemini",
+        "Google Gemini",
+        "gemini-2.5-pro",
+        False,
+        ("gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"),
+    ),
 }
 
 
@@ -65,6 +85,19 @@ def model_for(config, provider_id: str) -> str | None:
     )
 
 
+def with_model(runner, command: str, model: str | None):
+    """Wrap a command runner so Copilot CLI calls get `--model <model>`."""
+    if not model:
+        return runner
+
+    async def run(args: list[str], cwd: str, timeout: float):
+        if args and args[0] == command:
+            args = [command, "--model", model, *args[1:]]
+        return await runner(args, cwd, timeout)
+
+    return run
+
+
 async def verify_key(provider_id: str, api_key: str, model: str) -> None:
     """Check a key with a cheap call; raises ProviderError when it is not accepted."""
     from app.ai import anthropic, gemini
@@ -79,7 +112,7 @@ def make_provider(provider_id: str, settings, runner, model: str | None = None):
     if provider_id not in PROVIDERS:
         raise ProviderNotConfigured(f"Unknown AI provider '{provider_id}'")
     if provider_id == "copilot":
-        return CopilotProvider(settings.copilot_command, runner)
+        return CopilotProvider(settings.copilot_command, runner)  # runner adds --model
     key = api_key_for(settings, provider_id)
     if not key:
         raise ProviderNotConfigured(

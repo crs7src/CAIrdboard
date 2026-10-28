@@ -8,6 +8,7 @@ export interface AiProvider {
   configured: boolean
   model: string | null
   default_model: string | null
+  models: string[]
   needs_key: boolean
   is_default: boolean
   supports_agent: boolean

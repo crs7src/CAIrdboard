@@ -9,6 +9,7 @@ from app.ai import (
     make_provider,
     model_for,
     resolve_provider_id,
+    with_model,
 )
 from app.core.ai_config import load_ai_config
 from app.core.config import (
@@ -51,8 +52,14 @@ def _implementation_states(settings: Settings) -> dict[str, str]:
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 
-def get_runner():
-    return planner.run_command
+def get_runner(settings: SettingsDep):
+    """The command runner; a model chosen for Copilot is added as `--model`."""
+    config = load_ai_config(settings.ai_config_file)
+    return with_model(
+        planner.run_command,
+        settings.copilot_command,
+        config.provider_models.get("copilot"),
+    )
 
 
 RunnerDep = Annotated[object, Depends(get_runner)]

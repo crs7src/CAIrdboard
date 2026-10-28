@@ -42,7 +42,7 @@ function ProviderCard({ provider, onChanged }: CardProps) {
     }
   }
 
-  const modelChanged = model.trim() !== '' && model.trim() !== (provider.model ?? '')
+  const modelChanged = model !== (provider.model ?? '')
   const canSave = apiKey.trim() !== '' || modelChanged
 
   function save(e: FormEvent) {
@@ -50,7 +50,7 @@ function ProviderCard({ provider, onChanged }: CardProps) {
     void run(async () => {
       const update: { api_key?: string; model?: string } = {}
       if (apiKey.trim()) update.api_key = apiKey.trim()
-      if (modelChanged) update.model = model.trim()
+      if (modelChanged) update.model = model
       const saved = await saveAiProvider(provider.id, update)
       setApiKey('')
       setModel(saved.model ?? '')
@@ -58,6 +58,28 @@ function ProviderCard({ provider, onChanged }: CardProps) {
       return 'Saved.'
     })
   }
+
+  const options = model && !provider.models.includes(model) ? [model, ...provider.models] : provider.models
+  const modelSelect = (
+    <TextField
+      select
+      label="Model"
+      helperText={
+        provider.default_model
+          ? `Default: ${provider.default_model}`
+          : 'Default: the CLI\'s own default model'
+      }
+      value={model}
+      onChange={(e) => setModel(e.target.value)}
+    >
+      <MenuItem value="">Default</MenuItem>
+      {options.map((m) => (
+        <MenuItem key={m} value={m}>
+          {m}
+        </MenuItem>
+      ))}
+    </TextField>
+  )
 
   return (
     <Paper variant="outlined" sx={{ p: 2 }} component="form" onSubmit={save}>
@@ -74,10 +96,18 @@ function ProviderCard({ provider, onChanged }: CardProps) {
           {provider.is_default && <Chip size="small" color="primary" label="default" />}
         </Stack>
         {!provider.needs_key ? (
-          <Typography variant="body2" color="text.secondary">
-            Runs the copilot command on this machine with your signed-in GitHub account. No API key is needed, and
-            it is the only provider that can implement, review and address feedback for now.
-          </Typography>
+          <>
+            <Typography variant="body2" color="text.secondary">
+              Runs the copilot command on this machine with your signed-in GitHub account. No API key is needed, and
+              it is the only provider that can implement, review and address feedback for now.
+            </Typography>
+            {modelSelect}
+            <Stack direction="row" spacing={1}>
+              <Button type="submit" variant="contained" disabled={busy || !canSave}>
+                Save
+              </Button>
+            </Stack>
+          </>
         ) : (
           <>
             <Typography variant="body2" color="text.secondary">
@@ -92,12 +122,7 @@ function ProviderCard({ provider, onChanged }: CardProps) {
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
             />
-            <TextField
-              label="Model"
-              helperText={provider.default_model ? `Default: ${provider.default_model}` : undefined}
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-            />
+            {modelSelect}
             <Stack direction="row" spacing={1}>
               <Button type="submit" variant="contained" disabled={busy || !canSave}>
                 Save

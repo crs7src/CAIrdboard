@@ -12,6 +12,7 @@ const provider = (id: string, label: string, over = {}) => ({
   configured: false,
   model: id === 'copilot' ? null : `${id}-model`,
   default_model: id === 'copilot' ? null : `${id}-model`,
+  models: ['model-a', 'model-b'],
   needs_key: id !== 'copilot',
   is_default: id === 'copilot',
   supports_agent: id === 'copilot',
@@ -33,6 +34,21 @@ test('lists the providers; Copilot needs no key and the agent limit is explained
   expect(screen.getByText('default')).toBeInTheDocument()
 })
 
+test('Copilot has a model dropdown and saves the chosen model', async () => {
+  const fetchMock = mockApi({
+    '/api/ai/providers': { body: list() },
+    'PUT /api/ai/providers/copilot/credentials': { body: provider('copilot', 'GitHub Copilot CLI', { model: 'model-b' }) },
+  })
+  render(<AiProvidersSettings />)
+  const selects = await screen.findAllByRole('combobox', { name: 'Model' })
+  await userEvent.click(selects[0])
+  await userEvent.click(await screen.findByRole('option', { name: 'model-b' }))
+  await userEvent.click(screen.getAllByRole('button', { name: 'Save' })[0])
+  expect(await screen.findByText('Saved.')).toBeInTheDocument()
+  const put = fetchMock.mock.calls.find(([, i]) => i?.method === 'PUT')!
+  expect(JSON.parse(String(put[1]?.body))).toEqual({ model: 'model-b' })
+})
+
 test('saves a key, clears the field and never shows the key', async () => {
   const fetchMock = mockApi({
     '/api/ai/providers': { body: list() },
@@ -40,7 +56,7 @@ test('saves a key, clears the field and never shows the key', async () => {
   })
   render(<AiProvidersSettings />)
   await userEvent.type(await screen.findByLabelText('Anthropic API key'), 'sk-secret')
-  await userEvent.click(screen.getAllByRole('button', { name: 'Save' })[0])
+  await userEvent.click(screen.getAllByRole('button', { name: 'Save' })[1])
   expect(await screen.findByText('Saved.')).toBeInTheDocument()
   const put = fetchMock.mock.calls.find(([, i]) => i?.method === 'PUT')!
   expect(JSON.parse(String(put[1]?.body))).toEqual({ api_key: 'sk-secret' })
@@ -59,7 +75,7 @@ test('shows an error alert when the key is rejected', async () => {
   })
   render(<AiProvidersSettings />)
   await userEvent.type(await screen.findByLabelText('Anthropic API key'), 'bad')
-  await userEvent.click(screen.getAllByRole('button', { name: 'Save' })[0])
+  await userEvent.click(screen.getAllByRole('button', { name: 'Save' })[1])
   expect(await screen.findByRole('alert')).toHaveTextContent('did not accept the API key')
 })
 

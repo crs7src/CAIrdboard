@@ -3,9 +3,9 @@ import { expect, test } from '@playwright/test'
 test('save an Anthropic key, and the card page shows which AI made the plan', async ({ page }) => {
   let configured = false
   const providers = () => [
-    { id: 'copilot', label: 'GitHub Copilot CLI', configured: true, model: null, default_model: null, needs_key: false, supports_agent: true, is_default: true },
-    { id: 'anthropic', label: 'Anthropic', configured, model: null, default_model: 'claude-sonnet-4-5', needs_key: true, supports_agent: false, is_default: false },
-    { id: 'gemini', label: 'Google Gemini', configured: false, model: null, default_model: 'gemini-2.5-pro', needs_key: true, supports_agent: false, is_default: false },
+    { id: 'copilot', label: 'GitHub Copilot CLI', configured: true, model: null, default_model: null, models: [], needs_key: false, supports_agent: true, is_default: true },
+    { id: 'anthropic', label: 'Anthropic', configured, model: null, default_model: 'claude-sonnet-4-5', models: ['claude-sonnet-4-5'], needs_key: true, supports_agent: false, is_default: false },
+    { id: 'gemini', label: 'Google Gemini', configured: false, model: null, default_model: 'gemini-2.5-pro', models: ['gemini-2.5-pro'], needs_key: true, supports_agent: false, is_default: false },
   ]
   let saved: Record<string, unknown> | null = null
   await page.route('**/api/ai/providers', (route) => route.fulfill({ json: providers() }))
@@ -16,7 +16,7 @@ test('save an Anthropic key, and the card page shows which AI made the plan', as
   })
   await page.goto('/settings/ai-providers')
   await page.getByLabel('Anthropic API key').fill('sk-secret')
-  await page.getByRole('button', { name: 'Save' }).first().click()
+  await page.getByRole('button', { name: 'Save' }).nth(1).click()
   await expect.poll(() => saved).toMatchObject({ api_key: 'sk-secret' })
   await expect(page.getByText('sk-secret')).toHaveCount(0)
 

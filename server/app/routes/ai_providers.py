@@ -19,6 +19,7 @@ class ProviderStatus(BaseModel):
     configured: bool
     model: str | None
     default_model: str | None
+    models: list[str]
     needs_key: bool
     is_default: bool
     supports_agent: bool
@@ -28,7 +29,7 @@ class ProviderCredentialsUpdate(BaseModel):
     api_key: str | None = None
     model: str | None = None
 
-    @field_validator("api_key", "model")
+    @field_validator("api_key")
     @classmethod
     def not_blank(cls, v: str | None) -> str | None:
         if v is None:
@@ -37,6 +38,11 @@ class ProviderCredentialsUpdate(BaseModel):
         if not v:
             raise ValueError("Must not be empty")
         return v
+
+    @field_validator("model")
+    @classmethod
+    def strip_model(cls, v: str | None) -> str | None:
+        return None if v is None else v.strip()  # blank resets to the default
 
 
 class DefaultProviderBody(BaseModel):
@@ -51,6 +57,7 @@ def _status(settings: Settings, config: AiConfig, provider_id: str) -> ProviderS
         configured=is_configured(settings, provider_id),
         model=model_for(config, provider_id),
         default_model=info.default_model,
+        models=list(info.models),
         needs_key=provider_id != "copilot",
         is_default=config.default_provider == provider_id,
         supports_agent=info.supports_agent,
@@ -71,11 +78,29 @@ def list_providers(settings: SettingsDep) -> list[ProviderStatus]:
     return [_status(settings, config, p) for p in PROVIDERS]
 
 
+def _save_copilot_model(
+    settings: Settings, body: ProviderCredentialsUpdate
+) -> ProviderStatus:
+    if body.api_key is not None:
+        raise HTTPException(422, "GitHub Copilot CLI needs no API key")
+    if body.model is None:
+        raise HTTPException(422, "Provide a model")
+    config = load_ai_config(settings.ai_config_file)
+    if body.model:
+        config.provider_models["copilot"] = body.model
+    else:
+        config.provider_models.pop("copilot", None)
+    save_ai_config(settings.ai_config_file, config)
+    return _status(settings, config, "copilot")
+
+
 @router.put("/api/ai/providers/{provider_id}/credentials")
 async def put_provider_credentials(
     provider_id: str, body: ProviderCredentialsUpdate, settings: SettingsDep
 ) -> ProviderStatus:
     """Verify the key (when there is one) with the provider, then save it."""
+    if provider_id == "copilot":
+        return _save_copilot_model(settings, body)
     provider_id = _api_provider(provider_id)
     if body.api_key is None and body.model is None:
         raise HTTPException(422, "Provide at least one of api_key, model")
@@ -93,8 +118,11 @@ async def put_provider_credentials(
             {f"{provider_id}_api_key": body.api_key},
             AI_FIELDS,
         )
-    if body.model:
-        config.provider_models[provider_id] = body.model
+    if body.model is not None:
+        if body.model:
+            config.provider_models[provider_id] = body.model
+        else:
+            config.provider_models.pop(provider_id, None)
         save_ai_config(settings.ai_config_file, config)
     saved = settings.model_copy(update={f"{provider_id}_api_key": key})
     return _status(saved, config, provider_id)
