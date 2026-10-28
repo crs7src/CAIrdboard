@@ -241,7 +241,7 @@ test('the AI provider select shows the default, notes the agent limit and is sen
   const dialog = screen.getByRole('dialog')
   const select = within(dialog).getByRole('combobox', { name: 'AI provider' })
   expect(await within(dialog).findByText('Default (Google Gemini)')).toBeInTheDocument()
-  expect(within(dialog).getByText(/Anthropic runs every stage/)).toBeInTheDocument()
+  expect(within(dialog).getByText(/Anthropic and Google Gemini run every stage/)).toBeInTheDocument()
   await userEvent.type(within(dialog).getByLabelText('Project name'), 'Alpha')
   await userEvent.type(within(dialog).getByLabelText('Jira project key'), 'ab')
   await userEvent.type(within(dialog).getByLabelText('Repo path'), '/r/ab')

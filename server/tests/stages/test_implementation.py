@@ -628,9 +628,7 @@ def test_implementation_without_the_api_key_is_503(client, env, ai):
 
 
 @respx.mock
-def test_implementation_stays_on_copilot_for_a_provider_that_cannot_edit(
-    client, env, ai
-):
+def test_implementation_runs_on_gemini_when_configured(client, env, ai, monkeypatch):
     tmp_path, work = env
     save_ai_config(
         tmp_path / "ai.json",
@@ -640,11 +638,47 @@ def test_implementation_stays_on_copilot_for_a_provider_that_cannot_edit(
             auto_review=False,
         ),
     )
+    monkeypatch.setenv("GEMINI_API_KEY", "gem-key")
+
+    def text(value):
+        return httpx.Response(
+            200, json={"candidates": [{"content": {"parts": [{"text": value}]}}]}
+        )
+
+    commit = (
+        "echo x > api.txt && git add api.txt && "
+        "git commit -q -m 'AB-1: step 1 - via gemini'"
+    )
+    call = httpx.Response(
+        200,
+        json={
+            "candidates": [
+                {
+                    "content": {
+                        "role": "model",
+                        "parts": [
+                            {
+                                "functionCall": {
+                                    "name": "bash",
+                                    "args": {"command": commit},
+                                }
+                            }
+                        ],
+                    }
+                }
+            ]
+        },
+    )
+    api = respx.post(
+        url__regex=r"https://generativelanguage\.googleapis\.com/.*:generateContent"
+    ).mock(side_effect=[text("gem summary"), call, text("## Report\nDone")])
     mock_jira()
     approve_plan(tmp_path)
+
     assert client.post("/api/cards/AB-1/implementation").status_code == 202
     body = client.get("/api/cards/AB-1/implementation").json()
     assert body["state"] == "completed", body["error"]
-    assert body["provider"] == "copilot"
-    assert body["branch"] == "AB-1_add_dark_mode"
-    assert "--allow-all-tools" in ai.implement_call
+    assert body["provider"] == "gemini"
+    assert [c["subject"] for c in body["commits"]] == ["AB-1: step 1 - via gemini"]
+    assert api.call_count == 3
+    assert ai.ai_calls == []

@@ -22,7 +22,7 @@ Everything runs on your machine. The browser never holds credentials or runs com
 - Python 3.15 or later (see `server/pyproject.toml`)
 - [uv](https://docs.astral.sh/uv/)
 - git
-- An AI provider: the [Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli) (the default) or an Anthropic/Gemini API key. Implement, review and feedback steps always use Copilot.
+- An AI provider: the [Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli) (the default) or an Anthropic/Gemini API key. Anthropic and Gemini run every step, including implement, review and feedback, with confined file-edit and shell tools.
 - Credentials for the services you use: Jira (email + API token), GitHub token, GitLab token.
 
 ## Setup

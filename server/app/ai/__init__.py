@@ -78,7 +78,7 @@ PROVIDERS: dict[str, ProviderInfo] = {
         "gemini",
         "Google Gemini",
         "gemini-2.5-pro",
-        False,
+        True,
         ("gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"),
     ),
 }

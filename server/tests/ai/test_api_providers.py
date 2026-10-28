@@ -140,3 +140,89 @@ def test_make_provider_needs_a_key_and_uses_the_model():
     with pytest.raises(Exception, match="no API key"):
         make_provider("gemini", settings, None)
     assert make_provider("anthropic", settings, None).model
+
+
+def gemini_call(name, args):
+    return httpx.Response(
+        200,
+        json={
+            "candidates": [
+                {
+                    "content": {
+                        "role": "model",
+                        "parts": [{"functionCall": {"name": name, "args": args}}],
+                    }
+                }
+            ]
+        },
+    )
+
+
+@respx.mock
+async def test_gemini_agent_edits_runs_bash_and_answers(tmp_path):
+    (tmp_path / "a.txt").write_text("old")
+    route = respx.post(GEMINI_URL).mock(
+        side_effect=[
+            gemini_call("edit", {"path": "a.txt", "old_str": "old", "new_str": "new"}),
+            gemini_call("bash", {"command": "echo hi"}),
+            gemini_ok("done"),
+        ]
+    )
+    result = await gemini().run("p", str(tmp_path), 30, mode="agent")
+    assert (result.returncode, result.stdout) == (0, "done")
+    assert (tmp_path / "a.txt").read_text() == "new"
+    first = __import__("json").loads(route.calls[0].request.content)
+    names = [d["name"] for d in first["tools"][0]["functionDeclarations"]]
+    assert {"edit", "create", "bash"} <= set(names)
+    last = __import__("json").loads(route.calls[2].request.content)
+    reply = last["contents"][-1]["parts"][0]["functionResponse"]["response"]["result"]
+    assert "hi" in reply
+
+
+@respx.mock
+async def test_gemini_agent_denied_bash_goes_back_to_model(tmp_path):
+    route = respx.post(GEMINI_URL).mock(
+        side_effect=[gemini_call("bash", {"command": "git push"}), gemini_ok("ok")]
+    )
+    result = await gemini().run("p", str(tmp_path), 30, mode="agent")
+    assert result.returncode == 0
+    last = __import__("json").loads(route.calls[1].request.content)
+    reply = last["contents"][-1]["parts"][0]["functionResponse"]["response"]["result"]
+    assert (
+        "refus" in reply.lower()
+        or "not allowed" in reply.lower()
+        or "denied" in reply.lower()
+    )
+
+
+@respx.mock
+async def test_gemini_read_only_modes_get_no_agent_tools(tmp_path):
+    route = respx.post(GEMINI_URL).mock(return_value=gemini_ok())
+    await gemini().run("p", str(tmp_path), 30)
+    body = __import__("json").loads(route.calls[0].request.content)
+    names = [d["name"] for d in body["tools"][0]["functionDeclarations"]]
+    assert names == ["view", "grep", "glob"]
+
+
+@respx.mock
+async def test_gemini_agent_iteration_cap_and_max_tokens(tmp_path):
+    respx.post(GEMINI_URL).mock(return_value=gemini_call("glob", {"pattern": "*"}))
+    capped = GeminiProvider(KEY, "gem-1", max_agent_iterations=2)
+    result = await capped.run("p", str(tmp_path), 30, mode="agent")
+    assert result.returncode == 1 and "2 tool steps" in result.stderr
+    respx.post(GEMINI_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "candidates": [
+                    {
+                        "finishReason": "MAX_TOKENS",
+                        "content": {"parts": [{"text": "part"}]},
+                    }
+                ]
+            },
+        )
+    )
+    result = await gemini().run("p", str(tmp_path), 30, mode="agent")
+    assert result.returncode == 1 and "too long" in result.stderr
+    assert KEY not in result.stderr
