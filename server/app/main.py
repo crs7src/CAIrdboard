@@ -271,6 +271,8 @@ def put_ai_config(config: AiConfig, settings: SettingsDep) -> AiConfig:
     # Older clients (the AI settings tab) send no names; keep the saved ones.
     if "project_names" not in config.model_fields_set:
         config.project_names = load_ai_config(settings.ai_config_file).project_names
+    if "auto_review" not in config.model_fields_set:
+        config.auto_review = load_ai_config(settings.ai_config_file).auto_review
     config.project_names = {
         k: n for k, n in config.project_names.items() if k in config.project_repos
     }
