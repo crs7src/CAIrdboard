@@ -3,6 +3,14 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException
 
+from app.ai import (
+    AiProvider,
+    ProviderNotConfigured,
+    make_provider,
+    model_for,
+    resolve_provider_id,
+    with_model,
+)
 from app.core.ai_config import load_ai_config
 from app.core.config import (
     Settings,
@@ -44,8 +52,14 @@ def _implementation_states(settings: Settings) -> dict[str, str]:
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 
-def get_runner():
-    return planner.run_command
+def get_runner(settings: SettingsDep):
+    """The command runner; a model chosen for Copilot is added as `--model`."""
+    config = load_ai_config(settings.ai_config_file)
+    return with_model(
+        planner.run_command,
+        settings.copilot_command,
+        config.provider_models.get("copilot"),
+    )
 
 
 RunnerDep = Annotated[object, Depends(get_runner)]
@@ -63,3 +77,14 @@ def _repo_for_key(settings: Settings, key: str) -> str:
     if repo is None or not Path(repo).is_dir():
         raise HTTPException(422, "No valid repo is configured for this card's project")
     return repo
+
+
+def provider_for(settings: Settings, runner, project: str) -> AiProvider:
+    """The AI provider chosen for a project; 503 when it has no API key yet."""
+    config = load_ai_config(settings.ai_config_file)
+    try:
+        provider_id = resolve_provider_id(config, project)
+        model = model_for(config, provider_id)
+        return make_provider(provider_id, settings, runner, model)
+    except ProviderNotConfigured as e:
+        raise HTTPException(503, str(e)) from e

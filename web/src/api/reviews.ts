@@ -3,6 +3,8 @@ import { failure } from './client'
 export type ReviewState = 'running' | 'clean' | 'fixed' | 'failed'
 
 export interface Review {
+  // The AI that ran it; null when none was used.
+  provider?: string | null
   card_key: string
   version: number
   implementation_version: number

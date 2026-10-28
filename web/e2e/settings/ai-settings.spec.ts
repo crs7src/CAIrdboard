@@ -28,7 +28,7 @@ test('edit AI settings and save them', async ({ page }) => {
   })
   await page.goto('/')
   await page.getByRole('link', { name: 'Settings', exact: true }).click()
-  await page.getByRole('tab', { name: 'AI' }).click()
+  await page.getByRole('tab', { name: 'AI', exact: true }).click()
   await expect(page.getByLabel('Eligible Jira statuses')).toHaveValue('Backlog')
   await page.getByLabel('Eligible Jira statuses').fill('Backlog, Ready to Play')
   await page.getByRole('button', { name: 'Add project' }).click()

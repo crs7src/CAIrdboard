@@ -3,6 +3,7 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.auth.credentials import (
+    AI_FIELDS,
     GITHUB_FIELDS,
     GITLAB_FIELDS,
     read_saved_credentials,
@@ -23,6 +24,9 @@ class Settings(BaseSettings):
     github_url: str = "https://api.github.com"
     github_token: str = ""
     github_credentials_file: Path = Path("data/github.json")
+    anthropic_api_key: str = ""
+    gemini_api_key: str = ""
+    ai_credentials_file: Path = Path("data/ai_credentials.json")
     ai_config_file: Path = Path("data/ai_config.json")
     db_file: Path = Path("data/cairdboard.db")
     # Folders of JSON files written before the SQLite database; imported once at startup.
@@ -60,4 +64,5 @@ def get_settings() -> Settings:
     saved = read_saved_credentials(settings.jira_credentials_file)
     saved |= read_saved_credentials(settings.gitlab_credentials_file, GITLAB_FIELDS)
     saved |= read_saved_credentials(settings.github_credentials_file, GITHUB_FIELDS)
+    saved |= read_saved_credentials(settings.ai_credentials_file, AI_FIELDS)
     return settings.model_copy(update=saved)

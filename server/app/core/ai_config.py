@@ -15,6 +15,16 @@ DEFAULT_ELIGIBLE_STATUSES = [
 ]
 
 
+PROVIDER_IDS = ("copilot", "anthropic", "gemini")
+
+
+def _known_provider(value: str) -> str:
+    value = value.strip().lower()
+    if value not in PROVIDER_IDS:
+        raise ValueError(f"Unknown AI provider '{value}'")
+    return value
+
+
 class AiConfig(BaseModel):
     eligible_statuses: list[str] = Field(
         default_factory=lambda: list(DEFAULT_ELIGIBLE_STATUSES)
@@ -25,6 +35,12 @@ class AiConfig(BaseModel):
     project_names: dict[str, str] = Field(default_factory=dict)
     # Start the review automatically when an implementation completes.
     auto_review: bool = True
+    # AI provider used when a project has none of its own.
+    default_provider: str = "copilot"
+    # Project key -> AI provider id, for projects that differ from the default.
+    project_providers: dict[str, str] = Field(default_factory=dict)
+    # Provider id -> model override (blank means the provider's default).
+    provider_models: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("eligible_statuses")
     @classmethod
@@ -55,6 +71,25 @@ class AiConfig(BaseModel):
             for key, name in v.items()
             if key.strip() and name.strip()
         }
+
+    @field_validator("default_provider")
+    @classmethod
+    def known_default(cls, v: str) -> str:
+        return _known_provider(v)
+
+    @field_validator("project_providers")
+    @classmethod
+    def clean_providers(cls, v: dict[str, str]) -> dict[str, str]:
+        return {
+            key.strip().upper(): _known_provider(provider)
+            for key, provider in v.items()
+            if key.strip()
+        }
+
+    @field_validator("provider_models")
+    @classmethod
+    def clean_models(cls, v: dict[str, str]) -> dict[str, str]:
+        return {_known_provider(p): m.strip() for p, m in v.items() if m.strip()}
 
     def is_eligible(self, status: str, source: str = "jira") -> bool:
         # An open GitHub issue is always plannable; its only other state is Closed.

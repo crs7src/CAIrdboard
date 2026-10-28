@@ -78,6 +78,7 @@ def test_create_jira_with_github_host(client, repo, config_file):
         "host": True,
         "host_credentials": True,
         "tests": False,
+        "ai": True,
     }
     config = load_ai_config(config_file)
     assert config.project_repos == {"AB": repo}
@@ -357,3 +358,37 @@ def test_card_listing_does_not_overwrite_a_manual_github_mapping(
     client.get("/api/cards")
     client.get("/api/projects/GH_MY_APP")
     assert load_ai_config(config_file).project_repos["GH_MY_APP"] == repo
+
+
+def test_ai_provider_create_update_blank_and_delete(client, repo, config_file):
+    project = create(client, repo, ai_provider="Anthropic").json()
+    assert project["ai_provider"] == "anthropic"
+    assert project["effective_ai_provider"] == "anthropic"
+    ai = next(i for i in project["status"] if i["id"] == "ai")
+    assert not ai["done"] and "Anthropic" in ai["label"] and "no API key" in ai["label"]
+    assert load_ai_config(config_file).project_providers == {"AB": "anthropic"}
+
+    body = {"name": "My project", "repo_path": repo}
+    # Omitting the field on update keeps the choice.
+    kept = client.put("/api/projects/AB", json=body).json()
+    assert kept["ai_provider"] == "anthropic"
+    # A blank one goes back to the default.
+    blank = client.put("/api/projects/AB", json={**body, "ai_provider": ""}).json()
+    assert blank["ai_provider"] is None
+    assert blank["effective_ai_provider"] == "copilot"
+    assert load_ai_config(config_file).project_providers == {}
+
+    client.put("/api/projects/AB", json={**body, "ai_provider": "gemini"})
+    assert client.delete("/api/projects/AB").status_code == 204
+    assert load_ai_config(config_file).project_providers == {}
+
+
+def test_effective_provider_follows_default_and_unknown_is_422(
+    client, repo, config_file
+):
+    save_ai_config(config_file, AiConfig(default_provider="gemini"))
+    project = create(client, repo).json()
+    assert project["ai_provider"] is None
+    assert project["effective_ai_provider"] == "gemini"
+    assert create(client, repo, key="cd", ai_provider="skynet").status_code == 422
+    assert client.get("/api/projects/AB").json()["effective_ai_provider"] == "gemini"

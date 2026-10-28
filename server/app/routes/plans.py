@@ -13,6 +13,7 @@ from app.deps import (
     _db,
     _states,
     _valid_key,
+    provider_for,
 )
 from app.routes.cards import _load_card
 from app.stages import planner
@@ -60,13 +61,14 @@ async def create_plan(
     if not Path(repo).is_dir():
         raise HTTPException(422, f"Repo path for {card.project} does not exist: {repo}")
 
+    provider = provider_for(settings, runner, card.project)
     store = planner.PlanStore(_db(settings))
     previous = planner.recover_stale(store, store.latest(key))
     if key in planner.ACTIVE or (previous and previous.state == "running"):
         raise HTTPException(409, "A plan is already being generated for this card")
 
     feedback = body.feedback if body else None
-    plan = store.create(key, card.status, feedback)
+    plan = store.create(key, card.status, feedback, provider.id)
     planner.ACTIVE.add(key)
     background.add_task(
         planner.generate,
@@ -78,6 +80,7 @@ async def create_plan(
         settings.copilot_command,
         settings.plan_timeout_seconds,
         runner,
+        provider,
     )
     return plan
 

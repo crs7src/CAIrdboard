@@ -1,4 +1,5 @@
 import { Navigate, Route } from 'react-router-dom'
+import AiProvidersSettings from './AiProvidersSettings'
 import AiSettings from './AiSettings'
 import GitHubSettings from './auth/GitHubSettings'
 import GitLabSettings from './auth/GitLabSettings'
@@ -14,6 +15,7 @@ export const settingsRoutes = (
       <Route index element={<Navigate to="/settings/ai" replace />} />
       <Route path="jira" element={<Settings />} />
       <Route path="ai" element={<AiSettings />} />
+      <Route path="ai-providers" element={<AiProvidersSettings />} />
       <Route path="skills" element={<SkillsSettings />} />
       <Route path="gitlab" element={<GitLabSettings />} />
       <Route path="github" element={<GitHubSettings />} />

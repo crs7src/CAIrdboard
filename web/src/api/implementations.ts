@@ -9,6 +9,8 @@ export async function fetchImplementationStates(): Promise<Record<string, ImplSt
 export type ImplState = 'running' | 'completed' | 'failed'
 
 export interface Implementation {
+  // The AI that ran it; null when none was used.
+  provider?: string | null
   card_key: string
   version: number
   plan_version: number

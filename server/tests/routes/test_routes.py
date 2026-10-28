@@ -1,6 +1,7 @@
 from app.main import app
 
 EXPECTED = """
+delete /api/ai/providers/{provider_id}/credentials
 delete /api/cards/{key}/feedback/comments/{comment_id}
 delete /api/cards/{key}/test
 delete /api/cards/{key}/test/approval
@@ -10,6 +11,8 @@ delete /api/repo-hosts/{project}
 delete /api/skills/{step}
 delete /api/test-configs/{project}
 get /api/ai-config
+get /api/ai/providers
+get /api/ai/providers/{provider_id}/check
 get /api/cards
 get /api/cards/{key}
 get /api/cards/{key}/changes
@@ -53,6 +56,8 @@ post /api/cards/{key}/test/feedback
 post /api/cards/{key}/test/problem
 post /api/projects
 put /api/ai-config
+put /api/ai/default
+put /api/ai/providers/{provider_id}/credentials
 put /api/cards/{key}/feedback/comments/{comment_id}
 put /api/cards/{key}/test/approval
 put /api/github/credentials

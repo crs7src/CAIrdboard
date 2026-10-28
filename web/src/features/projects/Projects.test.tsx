@@ -137,6 +137,7 @@ test('the form sends the Jira + GitLab payload', async () => {
     jira_enabled: true,
     provider: 'gitlab',
     host_path: 'g/p',
+    ai_provider: null,
   })
 })
 
@@ -166,6 +167,7 @@ test('GitHub only hides the Jira key, requires the repo, and sends no key', asyn
     jira_enabled: false,
     provider: 'github',
     host_path: 'me/app',
+    ai_provider: null,
   })
 })
 
@@ -220,4 +222,44 @@ test('Check host reports the default branch', async () => {
   await userEvent.click(await screen.findByRole('button', { name: /Alpha/ }))
   await userEvent.click(await screen.findByRole('button', { name: 'Check host' }))
   expect(await screen.findByRole('status')).toHaveTextContent('default branch main')
+})
+
+const aiProviders = [
+  { id: 'copilot', label: 'GitHub Copilot CLI', configured: true, is_default: false },
+  { id: 'anthropic', label: 'Anthropic', configured: false, is_default: false },
+  { id: 'gemini', label: 'Google Gemini', configured: true, is_default: true },
+]
+
+test('the AI provider select shows the default, notes the agent limit and is sent on save', async () => {
+  const fetchMock = mockApi({
+    '/api/projects': [{ body: [] }, { body: [project()] }],
+    '/api/ai/providers': { body: aiProviders },
+    'POST /api/projects': { status: 201, body: project() },
+  })
+  renderPage()
+  await userEvent.click(await screen.findByRole('button', { name: /Add project/ }))
+  const dialog = screen.getByRole('dialog')
+  const select = within(dialog).getByRole('combobox', { name: 'AI provider' })
+  expect(await within(dialog).findByText('Default (Google Gemini)')).toBeInTheDocument()
+  expect(within(dialog).getByText(/always use GitHub Copilot CLI for now/)).toBeInTheDocument()
+  await userEvent.type(within(dialog).getByLabelText('Project name'), 'Alpha')
+  await userEvent.type(within(dialog).getByLabelText('Jira project key'), 'ab')
+  await userEvent.type(within(dialog).getByLabelText('Repo path'), '/r/ab')
+  await userEvent.click(select)
+  await userEvent.click(within(screen.getByRole('listbox')).getByText('Anthropic'))
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Create' }))
+  const post = fetchMock.mock.calls.find(([, i]) => i?.method === 'POST')!
+  expect(JSON.parse(String(post[1]?.body))).toMatchObject({ ai_provider: 'anthropic' })
+})
+
+test('the checklist shows the effective AI provider and links to the providers tab', async () => {
+  const ai = { id: 'ai', label: 'AI provider: Anthropic (no API key)', done: false }
+  const p = project({ ai_provider: 'anthropic', effective_ai_provider: 'anthropic' })
+  p.status.push(ai)
+  mockApi({ '/api/projects': { body: [p] }, '/api/projects/AB': { body: { ...p, cards: [] } } })
+  renderPage()
+  await userEvent.click(await screen.findByRole('button', { name: /Alpha/ }))
+  expect(await screen.findByText('AI provider: Anthropic (no API key)')).toBeInTheDocument()
+  const item = screen.getByText('AI provider: Anthropic (no API key)').closest('li')!
+  expect(within(item).getByRole('link', { name: 'Set up' })).toHaveAttribute('href', '/settings/ai-providers')
 })

@@ -166,6 +166,9 @@ def test_ai_config_endpoints_roundtrip(client, env):
         "project_repos": {"XY": "/tmp"},
         "project_names": {},
         "auto_review": True,
+        "default_provider": "copilot",
+        "project_providers": {},
+        "provider_models": {},
     }
     named = {**body, "project_names": {"xy": "Xy app"}}
     assert client.put("/api/ai-config", json=named).status_code == 200
@@ -586,3 +589,74 @@ def test_plan_requires_jira(client, monkeypatch):
 def test_store_rejects_path_traversal(tmp_path):
     with pytest.raises(ValueError):
         planner.PlanStore(db()).latest("../evil")
+
+
+ANTHROPIC_MESSAGES = "https://api.anthropic.com/v1/messages"
+
+
+@respx.mock
+def test_plan_uses_the_project_provider_and_records_it(
+    client, runner, env, monkeypatch
+):
+    tmp_path, repo = env
+    other = tmp_path / "other"
+    other.mkdir()
+    save_ai_config(
+        tmp_path / "ai.json",
+        AiConfig(
+            project_repos={"AB": str(repo), "CD": str(other)},
+            project_providers={"AB": "anthropic"},
+        ),
+    )
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "ant-key")
+    api = respx.post(ANTHROPIC_MESSAGES).respond(
+        json={
+            "stop_reason": "end_turn",
+            "content": [{"type": "text", "text": "API plan"}],
+        }
+    )
+    mock_issue()
+    mock_issue(key="CD-1")
+
+    assert client.post("/api/cards/AB-1/plan").status_code == 202
+    first = client.get("/api/cards/AB-1/plan").json()
+    assert first["plan"] == "API plan" and first["provider"] == "anthropic"
+    assert runner.calls == [] and api.call_count == 1
+    assert api.calls[0].request.headers["x-api-key"] == "ant-key"
+
+    assert client.post("/api/cards/CD-1/plan").status_code == 202
+    second = client.get("/api/cards/CD-1/plan").json()
+    assert second["plan"] == "## Plan\n1. Do it" and second["provider"] == "copilot"
+    assert len(runner.calls) == 1 and api.call_count == 1
+
+
+@respx.mock
+def test_unconfigured_api_provider_is_503_and_creates_no_plan(client, runner, env):
+    tmp_path, repo = env
+    save_ai_config(
+        tmp_path / "ai.json",
+        AiConfig(project_repos={"AB": str(repo)}, default_provider="gemini"),
+    )
+    mock_issue()
+    response = client.post("/api/cards/AB-1/plan")
+    assert response.status_code == 503
+    assert "API key" in response.json()["detail"]
+    assert runner.calls == []
+    assert client.get("/api/cards/AB-1/plan").status_code == 404
+
+
+@respx.mock
+def test_api_provider_failure_is_recorded_on_the_plan(client, env, monkeypatch):
+    tmp_path, repo = env
+    save_ai_config(
+        tmp_path / "ai.json",
+        AiConfig(project_repos={"AB": str(repo)}, default_provider="anthropic"),
+    )
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "ant-key")
+    respx.post(ANTHROPIC_MESSAGES).respond(401, json={"error": {"message": "nope"}})
+    mock_issue()
+    client.post("/api/cards/AB-1/plan")
+    plan = client.get("/api/cards/AB-1/plan").json()
+    assert plan["state"] == "failed"
+    assert "did not accept the API key" in plan["error"]
+    assert "ant-key" not in plan["error"]

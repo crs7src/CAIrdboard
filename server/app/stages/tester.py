@@ -151,6 +151,8 @@ class TestRun(BaseModel):
     notes: list[str] = []
     report: str | None = None
     error: str | None = None
+    # The AI that worked out the apps; None when saved settings were used.
+    provider: str | None = None
     created_at: str
     updated_at: str
 
@@ -191,6 +193,7 @@ class TestStore(RunStore[TestRun]):
         review_version: int,
         source: TestSource = "ai",
         problem: str | None = None,
+        provider: str | None = None,
     ) -> TestRun:
         def build(version: int, stamp: str):
             run = TestRun(
@@ -200,6 +203,7 @@ class TestStore(RunStore[TestRun]):
                 state="preparing",
                 source=source,
                 problem=problem,
+                provider=provider,
                 branch=impl.branch,
                 created_at=stamp,
                 updated_at=stamp,
@@ -557,6 +561,7 @@ async def run_test(
     saved: list[AppSpec] | None = None,
     problem: str | None = None,
     previous: TestRun | None = None,
+    provider=None,
 ) -> None:
     """Start the card's branch for manual testing and wait until it responds.
 
@@ -586,7 +591,10 @@ async def run_test(
                 )
             else:
                 prompt = build_prompt(card, plan_text, impl, skill)
-            result = await runner(build_args(command, prompt), repo, timeout)
+            if provider is not None:
+                result = await provider.run(prompt, repo, timeout, "test")
+            else:
+                result = await runner(build_args(command, prompt), repo, timeout)
             output = result.stdout.strip()
             if result.returncode != 0:
                 raise ImplementationError(
@@ -643,8 +651,8 @@ async def run_test(
         run.state, run.error = "failed", str(e)
     except CommandTimeout:
         run.state, run.error = "failed", f"Timed out after {int(timeout)}s"
-    except CommandNotFound:
-        run.state, run.error = "failed", f"Command not found: {command}"
+    except CommandNotFound as e:
+        run.state, run.error = "failed", f"Command not found: {e or command}"
     except Exception as e:  # noqa: BLE001 - record any failure on the run
         run.state, run.error = "failed", f"Unexpected error: {e}"
     finally:

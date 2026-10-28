@@ -354,3 +354,9 @@ test('a GitHub issue card links to the issue on GitHub', async () => {
   )
   expect(screen.queryByRole('link', { name: 'Open in Jira' })).not.toBeInTheDocument()
 })
+
+test('the plan shows which AI provider produced it', async () => {
+  mockApi({ '/api/cards/AB-1': { body: detail() }, '/api/cards/AB-1/plan': { body: plan({ provider: 'anthropic' }) } })
+  renderDetail()
+  expect(await screen.findByText('via Anthropic')).toBeInTheDocument()
+})
