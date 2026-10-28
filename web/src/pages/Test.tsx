@@ -117,26 +117,19 @@ export default function Test({
   }, [cardKey])
 
   const fixing = fixRun?.state === 'running'
-  const fixVersion = fixRun?.version
   useEffect(() => {
     if (!fixing) return
     const id = setInterval(() => {
-      fetchFeedback(cardKey).then((f) => setFixRun(f.run), () => {})
+      fetchFeedback(cardKey).then((f) => {
+        setFixRun(f.run)
+        if (f.run?.state === 'running') return
+        // A finished fix run changes the branch and may clear the approval.
+        fetchTest(cardKey).then(setRun, () => {})
+        fetchTestApproval(cardKey).then((a) => setApproved(a.approved), () => setApproved(false))
+      }, () => {})
     }, FEEDBACK_POLL_MS)
     return () => clearInterval(id)
   }, [fixing, cardKey])
-
-  // A finished fix run changes the branch (and clears the approval), so re-read the test state.
-  const [seenEnd, setSeenEnd] = useState<string | null>(null)
-  useEffect(() => {
-    if (!fixRun || fixRun.state === 'running') return
-    const marker = `${fixRun.version}:${fixRun.state}`
-    if (marker === seenEnd) return
-    setSeenEnd(marker)
-    if (seenEnd === null) return
-    fetchTest(cardKey).then(setRun, () => {})
-    fetchTestApproval(cardKey).then((a) => setApproved(a.approved), () => setApproved(false))
-  }, [fixRun, fixVersion, seenEnd, cardKey])
 
   async function sendIssues() {
     setBusy(true)
