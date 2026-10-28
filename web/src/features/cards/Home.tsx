@@ -1,5 +1,6 @@
 import Brand from '../../app/Brand'
 import SyncIcon from '@mui/icons-material/Sync'
+import ArchiveIcon from '@mui/icons-material/Archive'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
@@ -13,6 +14,8 @@ import Box from '@mui/material/Box'
 import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import StepButton, { type StepStatus } from './StepButton'
 import {
+  archiveCard,
+  fetchArchive,
   fetchAiConfig,
   fetchCardList,
   fetchImplementationStates,
@@ -97,7 +100,7 @@ export default function Home() {
   const [mrUrls, setMrUrls] = useState<Record<string, string>>({})
   const [impls, setImpls] = useState<Record<string, ImplState>>({})
   const [config, setConfig] = useState<AiConfig | null>(null)
-
+  const [archived, setArchived] = useState<string[]>([])
   const navigate = useNavigate()
   const [actionError, setActionError] = useState<string | null>(null)
   const refreshing = useRef(false)
@@ -116,7 +119,7 @@ export default function Home() {
     if (refreshing.current) return
     refreshing.current = true
     try {
-      const [p, im, rv, ts, ap, mr, urls] = await Promise.all([
+      const [p, im, rv, ts, ap, mr, urls, arc] = await Promise.all([
         fetchPlanStates().catch(() => null),
         fetchImplementationStates().catch(() => null),
         fetchReviewStates().catch(() => null),
@@ -124,6 +127,7 @@ export default function Home() {
         fetchTestApprovals().catch(() => null),
         fetchMergeRequestStates().catch(() => null),
         fetchMergeRequestUrls().catch(() => null),
+        fetchArchive().catch(() => null),
       ])
       // A failed poll keeps the last known state instead of clearing it.
       if (p) setPlans(p)
@@ -133,6 +137,7 @@ export default function Home() {
       if (ap) setApprovals(ap)
       if (mr) setMrs(mr)
       if (urls) setMrUrls(urls)
+      if (arc) setArchived(arc)
     } finally {
       refreshing.current = false
     }
@@ -179,11 +184,12 @@ export default function Home() {
   // An ineligible status is always In Review/Done; otherwise a plan in any state means In Progress.
   // If the config could not be loaded, every card is treated as eligible.
   const inTodo = (c: JiraCard) => !config || isEligible(config, c.status, c.source)
-  const sections = cards?.length
+  const visible = cards?.filter((c) => !archived.includes(c.key))
+  const sections = visible?.length
     ? [
-        { title: 'In Progress', items: cards.filter((c) => plans[c.key] && inTodo(c)) },
-        { title: 'To Do', items: cards.filter((c) => !plans[c.key] && inTodo(c)) },
-        { title: 'In Review/Done', items: cards.filter((c) => !inTodo(c)) },
+        { title: 'In Progress', items: visible.filter((c) => plans[c.key] && inTodo(c)) },
+        { title: 'To Do', items: visible.filter((c) => !plans[c.key] && inTodo(c)) },
+        { title: 'In Review/Done', items: visible.filter((c) => !inTodo(c)) },
       ].filter((s) => s.title !== 'In Review/Done' || s.items.length > 0)
     : []
 
@@ -193,9 +199,14 @@ export default function Home() {
         <Typography variant="h4" component="h1">
           <Brand />
         </Typography>
-        <Button variant="contained" startIcon={<SyncIcon />} onClick={sync} disabled={loading}>
-          {loading ? 'Syncing...' : 'Sync'}
-        </Button>
+        <Stack direction="row" spacing={1}>
+          <Button variant="outlined" startIcon={<ArchiveIcon />} onClick={() => navigate('/archive')}>
+            View archive
+          </Button>
+          <Button variant="contained" startIcon={<SyncIcon />} onClick={sync} disabled={loading}>
+            {loading ? 'Syncing...' : 'Sync'}
+          </Button>
+        </Stack>
       </Stack>
       {error && (
         <Alert
@@ -280,6 +291,21 @@ export default function Home() {
                 )
               }
             />
+            {title === 'In Review/Done' && (
+              <Button
+                size="small"
+                startIcon={<ArchiveIcon />}
+                aria-label={`Archive ${card.key}`}
+                onClick={() =>
+                  run(
+                    () => archiveCard(card.key),
+                    () => setArchived((a) => [...a, card.key]),
+                  )
+                }
+              >
+                Archive
+              </Button>
+            )}
           </Box>
           <CardActionArea component={RouterLink} to={`/cards/${card.key}`}>
             <CardContent>

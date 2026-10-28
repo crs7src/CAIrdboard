@@ -11,9 +11,11 @@ type Route = Reply | Reply[] | ((init?: RequestInit) => Reply)
 /**
  * Stubs global fetch with per-endpoint replies, keyed by "METHOD /path"
  * (method defaults to GET when omitted). An array replies in order and then
- * keeps repeating its last element. Unknown endpoints answer 404.
+ * keeps repeating its last element. Unknown endpoints answer 404. The archive
+ * list defaults to empty.
  */
 export function mockApi(routes: Record<string, Route>) {
+  routes = { '/api/archive': { body: [] }, ...routes }
   const counters = new Map<string, number>()
   const fn = vi.fn(async (url: string, init?: RequestInit) => {
     const id = `${init?.method ?? 'GET'} ${url}`

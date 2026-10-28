@@ -290,6 +290,19 @@ def test_project_detail_has_only_its_cards(client, repo):
 
 
 @respx.mock
+def test_project_detail_hides_archived_cards_but_cards_list_keeps_them(client, repo):
+    create(client, repo)
+    mock_sources()
+    client.put("/api/cards/AB-1/archive")
+    assert client.get("/api/projects/AB").json()["cards"] == []
+    assert "AB-1" in [c["key"] for c in client.get("/api/cards").json()]
+    client.delete("/api/cards/AB-1/archive")
+    assert [c["key"] for c in client.get("/api/projects/AB").json()["cards"]] == [
+        "AB-1"
+    ]
+
+
+@respx.mock
 def test_project_cards_include_step_states(client, repo):
     from app.stages import planner
 

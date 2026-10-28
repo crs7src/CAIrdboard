@@ -38,6 +38,10 @@ CREATE TABLE IF NOT EXISTS test_approvals (
     card_key TEXT PRIMARY KEY,
     approved_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS archived_cards (
+    card_key TEXT PRIMARY KEY,
+    archived_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS gitlab_projects (
     project TEXT PRIMARY KEY,
     path TEXT NOT NULL
@@ -254,5 +258,34 @@ class Approvals:
         with self.db.connect() as conn:
             rows = conn.execute(
                 "SELECT card_key FROM test_approvals ORDER BY card_key"
+            ).fetchall()
+        return [r[0] for r in rows]
+
+
+class Archive:
+    """Cards the user has moved out of the Home and project views."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    def add(self, key: str) -> None:
+        with self.db.connect() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO archived_cards (card_key, archived_at) "
+                "VALUES (?, ?)",
+                (check_key(key), now()),
+            )
+
+    def remove(self, key: str) -> bool:
+        with self.db.connect() as conn:
+            cur = conn.execute(
+                "DELETE FROM archived_cards WHERE card_key = ?", (check_key(key),)
+            )
+        return cur.rowcount > 0
+
+    def keys(self) -> list[str]:
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                "SELECT card_key FROM archived_cards ORDER BY card_key"
             ).fetchall()
         return [r[0] for r in rows]

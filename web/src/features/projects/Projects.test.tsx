@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, expect, test, vi } from 'vitest'
@@ -84,6 +84,24 @@ test('expanding shows the cards grouped, linked and with their step', async () =
   expect(within(screen.getByRole('list', { name: 'To Do' })).getByText('No plan')).toBeInTheDocument()
   expect(within(screen.getByRole('list', { name: 'In Progress' })).getByText('Plan approved')).toBeInTheDocument()
   expect(within(screen.getByRole('list', { name: 'In Review/Done' })).getByText('Reviewed')).toBeInTheDocument()
+})
+
+test('Archive on an In Review/Done project card calls the API and hides it', async () => {
+  const fetchMock = mockApi({
+    '/api/projects': { body: [project()] },
+    '/api/projects/AB': {
+      body: project({ cards: [pcard('AB-1'), pcard('AB-3', { status: 'Done', eligible: false })] }),
+    },
+    'PUT /api/cards/AB-3/archive': { status: 204 },
+  })
+  renderPage()
+  await userEvent.click(await screen.findByRole('button', { name: /Alpha/ }))
+  await screen.findByRole('link', { name: 'AB-3' })
+  expect(screen.getAllByRole('button', { name: /^Archive AB/ })).toHaveLength(1)
+  await userEvent.click(screen.getByRole('button', { name: 'Archive AB-3' }))
+  await waitFor(() => expect(screen.queryByRole('link', { name: 'AB-3' })).not.toBeInTheDocument())
+  expect(screen.getByRole('link', { name: 'AB-1' })).toBeInTheDocument()
+  expect(fetchMock).toHaveBeenCalledWith('/api/cards/AB-3/archive', { method: 'PUT' })
 })
 
 test('shows an empty state and a warning when a card source failed', async () => {

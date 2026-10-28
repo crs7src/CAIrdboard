@@ -7,6 +7,7 @@ from app.core.legacy_import import import_legacy_files
 from app.deps import _test_store, get_runner
 from app.routes import (
     ai_providers,
+    archive,
     cards,
     changes,
     feedback,
@@ -42,6 +43,7 @@ for module in (
     jira_auth,
     gitlab_auth,
     github_auth,
+    archive,
     cards,
     plans,
     implementations,
