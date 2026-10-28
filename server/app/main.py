@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Response
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from app import (
     changes,
@@ -17,6 +17,7 @@ from app import (
     jira,
     merge_request,
     planner,
+    projects,
     remotes,
     reviewer,
     skills,
@@ -209,10 +210,9 @@ class CardDetail(jira.Card):
     repo_configured: bool
 
 
-@app.get("/api/cards")
-async def cards(settings: SettingsDep, response: Response) -> list[jira.Card]:
-    """Jira and GitHub cards. If one source fails while another works, its error is
-    reported in the X-Card-Warnings header instead of failing the whole list."""
+async def _load_cards(settings: Settings) -> tuple[list[jira.Card], list[str]]:
+    """Jira and GitHub cards plus the errors of sources that failed. Raises 503 when
+    no source is configured and 502 when every configured source fails."""
     if not settings.jira_configured and not settings.github_configured:
         _require_jira(settings)
     sources: list[tuple[str, Awaitable[list[jira.Card]]]] = []
@@ -237,6 +237,14 @@ async def cards(settings: SettingsDep, response: Response) -> list[jira.Card]:
     if errors and len(errors) == len(results):
         raise HTTPException(502, "; ".join(errors))
     await _link_issue_repos(settings, found)
+    return found, errors
+
+
+@app.get("/api/cards")
+async def cards(settings: SettingsDep, response: Response) -> list[jira.Card]:
+    """Jira and GitHub cards. If one source fails while another works, its error is
+    reported in the X-Card-Warnings header instead of failing the whole list."""
+    found, errors = await _load_cards(settings)
     if errors:
         response.headers["X-Card-Warnings"] = "; ".join(errors)
     return found
@@ -260,6 +268,12 @@ def get_ai_config(settings: SettingsDep) -> AiConfig:
 
 @app.put("/api/ai-config")
 def put_ai_config(config: AiConfig, settings: SettingsDep) -> AiConfig:
+    # Older clients (the AI settings tab) send no names; keep the saved ones.
+    if "project_names" not in config.model_fields_set:
+        config.project_names = load_ai_config(settings.ai_config_file).project_names
+    config.project_names = {
+        k: n for k, n in config.project_names.items() if k in config.project_repos
+    }
     save_ai_config(settings.ai_config_file, config)
     return config
 
@@ -1218,6 +1232,168 @@ async def check_repo_host(project: str, settings: SettingsDep) -> HostProject:
         return await hosting.fetch_project(settings, host.provider, host.path)
     except HostError as e:
         raise HTTPException(502, str(e)) from e
+
+
+class ProjectBody(BaseModel):
+    name: str
+    repo_path: str
+    # Jira project key; ignored for a GitHub-only project (its key comes from the repo).
+    key: str | None = None
+    jira_enabled: bool = True
+    provider: hosting.Provider | None = None
+    host_path: str | None = None
+
+    @field_validator("name", "repo_path")
+    @classmethod
+    def not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Must not be empty")
+        return v
+
+    @field_validator("key", "host_path")
+    @classmethod
+    def blank_to_none(cls, v: str | None) -> str | None:
+        return (v or "").strip() or None
+
+
+def _check_repo_path(path: str) -> None:
+    if not Path(path).is_absolute():
+        raise HTTPException(422, "Repo path must be absolute")
+    if not Path(path).is_dir():
+        raise HTTPException(422, "Repo path is not a folder on this machine")
+
+
+def _check_host(provider: str | None, path: str | None) -> hosting.Target | None:
+    if provider is None and path is None:
+        return None
+    if provider is None or path is None:
+        raise HTTPException(422, "Set both the git host and its project path")
+    try:
+        body = RepoHostBody(provider=provider, path=path)
+    except ValidationError as e:
+        raise HTTPException(
+            422, e.errors()[0]["msg"].removeprefix("Value error, ")
+        ) from e
+    return hosting.Target(provider=body.provider, path=body.path)
+
+
+def _save_project(
+    settings: Settings,
+    config: AiConfig,
+    key: str,
+    body: ProjectBody,
+    host: hosting.Target | None,
+) -> None:
+    config.project_repos[key] = body.repo_path
+    config.project_names[key] = body.name
+    save_ai_config(settings.ai_config_file, config)
+    mappings = hosting.Mappings(_db(settings))
+    if host:
+        mappings.set(key, host.provider, host.path)
+    else:
+        mappings.delete(key)
+
+
+async def _project(settings: Settings, config: AiConfig, key: str) -> projects.Project:
+    return await projects.build_project(settings, _db(settings), config, key)
+
+
+def _known_project(config: AiConfig, key: str) -> str:
+    key = key.upper()
+    if key not in config.project_repos:
+        raise HTTPException(404, "Project not found")
+    return key
+
+
+@app.get("/api/projects")
+async def list_projects(settings: SettingsDep) -> list[projects.Project]:
+    """Every project (a repo mapping), without cards so Jira is not called."""
+    config = load_ai_config(settings.ai_config_file)
+    return [await _project(settings, config, k) for k in sorted(config.project_repos)]
+
+
+@app.get("/api/projects/{key}")
+async def get_project(key: str, settings: SettingsDep) -> projects.Project:
+    """One project with its cards. A failing card source becomes card_warnings."""
+    config = load_ai_config(settings.ai_config_file)
+    key = _known_project(config, key)
+    project = await _project(settings, config, key)
+    try:
+        found, errors = await _load_cards(settings)
+    except HTTPException as e:
+        found, errors = [], [str(e.detail)]
+        if e.status_code == 503:
+            errors = []
+    db = _db(settings)
+    states = {
+        "plan": _states(planner.PlanStore(db), planner.recover_stale),
+        "implementation": _states(
+            implementer.ImplementationStore(db), implementer.recover_stale
+        ),
+        "review": _states(reviewer.ReviewStore(db), reviewer.recover_stale),
+        "test": _states(_test_store(settings), tester.recover_stale),
+    }
+    project.cards = projects.project_cards(found, key, config, states)
+    project.card_warnings = "; ".join(errors) or None
+    return project
+
+
+@app.post("/api/projects", status_code=201)
+async def create_project(body: ProjectBody, settings: SettingsDep) -> projects.Project:
+    _check_repo_path(body.repo_path)
+    host = _check_host(body.provider, body.host_path)
+    if body.jira_enabled:
+        key = (body.key or "").upper()
+        if not projects.JIRA_KEY_RE.match(key):
+            raise HTTPException(
+                422, "Use the Jira project key, like ABC (capital letters and digits)"
+            )
+    else:
+        if host is None or host.provider != "github":
+            raise HTTPException(422, "A GitHub-only project needs a GitHub repo path")
+        key = github.project_slug(host.path)
+    config = load_ai_config(settings.ai_config_file)
+    if key in config.project_repos:
+        raise HTTPException(409, f"A project with key {key} already exists")
+    if not body.jira_enabled and not github.IssueRepos(_db(settings)).claim(
+        key, host.path
+    ):
+        raise HTTPException(409, f"Another GitHub repo already uses the key {key}")
+    _save_project(settings, config, key, body, host)
+    return await _project(settings, config, key)
+
+
+@app.put("/api/projects/{key}")
+async def update_project(
+    key: str, body: ProjectBody, settings: SettingsDep
+) -> projects.Project:
+    """Change name, repo and host. The key is tied to card keys and runs, so it stays."""
+    config = load_ai_config(settings.ai_config_file)
+    key = _known_project(config, key)
+    _check_repo_path(body.repo_path)
+    host = _check_host(body.provider, body.host_path)
+    if not projects.is_jira_key(key) and (
+        host is None
+        or host.provider != "github"
+        or github.project_slug(host.path) != key
+    ):
+        raise HTTPException(
+            422, f"A GitHub-only project must stay on a GitHub repo named for {key}"
+        )
+    _save_project(settings, config, key, body, host)
+    return await _project(settings, config, key)
+
+
+@app.delete("/api/projects/{key}", status_code=204)
+def delete_project(key: str, settings: SettingsDep) -> None:
+    """Forget the project's setup only; runs, test settings and the repo stay."""
+    config = load_ai_config(settings.ai_config_file)
+    key = _known_project(config, key)
+    config.project_repos.pop(key)
+    config.project_names.pop(key, None)
+    save_ai_config(settings.ai_config_file, config)
+    hosting.Mappings(_db(settings)).delete(key)
 
 
 def _mr_repo(settings: Settings, key: str) -> str | None:
