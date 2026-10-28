@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, expect, test, vi } from 'vitest'
@@ -455,4 +455,45 @@ test('open GitHub issues are plannable without an Open status in the config', as
   const plan = await screen.findAllByRole('button', { name: 'Plan' })
   expect(plan.filter((b) => !(b as HTMLButtonElement).disabled)).toHaveLength(1)
   expect(screen.getAllByText('Plan: available')).toHaveLength(1)
+})
+
+test('archived cards are hidden from Home', async () => {
+  mockApi({
+    '/api/cards': { body: [card('AB-1'), card('AB-2', { status: 'Done' })] },
+    '/api/archive': { body: ['AB-2'] },
+    '/api/ai-config': { body: config },
+  })
+  renderHome()
+  await screen.findByRole('link', { name: /AB-1/ })
+  expect(screen.queryByRole('link', { name: /AB-2/ })).not.toBeInTheDocument()
+  expect(screen.queryByRole('region', { name: 'In Review/Done' })).not.toBeInTheDocument()
+})
+
+test('Archive on an In Review/Done card calls the API and hides the card', async () => {
+  const fetchMock = mockApi({
+    '/api/cards': { body: [card('AB-1'), card('AB-2', { status: 'Done' })] },
+    '/api/archive': { body: [] },
+    'PUT /api/cards/AB-2/archive': { status: 204 },
+    '/api/ai-config': { body: config },
+  })
+  renderHome()
+  await screen.findByRole('link', { name: /AB-2/ })
+  expect(screen.getAllByRole('button', { name: /^Archive/ })).toHaveLength(1)
+  await userEvent.click(screen.getByRole('button', { name: 'Archive AB-2' }))
+  await waitFor(() => expect(screen.queryByRole('link', { name: /AB-2/ })).not.toBeInTheDocument())
+  expect(fetchMock).toHaveBeenCalledWith('/api/cards/AB-2/archive', { method: 'PUT' })
+})
+
+test('View archive opens the archive page', async () => {
+  mockApi({ '/api/cards': { body: [] } })
+  render(
+    <MemoryRouter>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="*" element={<LocationProbe />} />
+      </Routes>
+    </MemoryRouter>,
+  )
+  await userEvent.click(screen.getByRole('button', { name: 'View archive' }))
+  expect(await screen.findByText('/archive')).toBeInTheDocument()
 })
