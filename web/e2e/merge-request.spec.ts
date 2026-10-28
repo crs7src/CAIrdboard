@@ -19,6 +19,7 @@ test('approve the test, create the merge request and follow its link', async ({ 
   let approved = false
   let mr: Record<string, unknown> | null = null
   let polls = 0
+  let posted: Record<string, string> | null = null
 
   await page.route('**/api/cards', (route) => route.fulfill({ json: [card] }))
   await page.route('**/api/cards/AB-1', (route) => route.fulfill({ json: card }))
@@ -74,12 +75,16 @@ test('approve the test, create the merge request and follow its link', async ({ 
   await page.route('**/api/repo-hosts/AB', (route) =>
     route.fulfill({ json: { project: 'AB', repo: '/r', provider: 'gitlab', path: 'grp/app', source: 'origin', detected: null } }),
   )
+  await page.route('**/api/cards/AB-1/merge-request/defaults', (route) =>
+    route.fulfill({ json: { title: 'AB-1 x', description: '[AB-1](https://x):' } }),
+  )
   await page.route('**/api/merge-requests', (route) =>
     route.fulfill({ json: mr ? { 'AB-1': mr.state } : {} }),
   )
   await page.route('**/api/cards/AB-1/merge-request', (route) => {
     if (route.request().method() === 'POST') {
       polls = 0
+      posted = route.request().postDataJSON()
       mr = mrRun('running')
       return route.fulfill({ status: 202, json: mr })
     }
@@ -96,7 +101,12 @@ test('approve the test, create the merge request and follow its link', async ({ 
   await page.getByRole('button', { name: /^Test stopped/ }).click()
   await page.getByRole('button', { name: 'Approve', exact: true }).click()
 
+  await expect(page.getByRole('textbox', { name: 'Title' })).toHaveValue('AB-1 x')
+  await expect(page.getByRole('textbox', { name: 'Description' })).toHaveValue('[AB-1](https://x):')
+  await page.getByRole('textbox', { name: 'Title' }).fill('Better title')
+  await page.getByRole('textbox', { name: 'Description' }).fill('Better text')
   await page.getByRole('button', { name: 'Create merge request', exact: true }).click()
+  await expect.poll(() => posted).toEqual({ title: 'Better title', description: 'Better text' })
   const link = page.getByRole('link', { name: '!42 AB-1 x' })
   await expect(link).toHaveAttribute('href', MR_URL)
   await expect(page.getByText('created', { exact: true })).toBeVisible()

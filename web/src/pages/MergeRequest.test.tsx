@@ -97,3 +97,46 @@ test('before any run the wording follows the project host', async () => {
   render(<MergeRequest cardKey="AB-1" approved />)
   expect(await screen.findByRole('button', { name: 'Create pull request' })).toBeInTheDocument()
 })
+
+const DEFAULTS = { title: 'AB-1 add dark mode', description: '[AB-1](https://x/AB-1):' }
+const RUNNING = { status: 202, body: mr({ state: 'running', mr_url: null, mr_iid: null }) }
+
+test('the title and description are prefilled from the defaults and sent when edited', async () => {
+  const fetchMock = mockApi({
+    '/api/cards/AB-1/merge-request': NONE,
+    '/api/cards/AB-1/merge-request/defaults': { body: DEFAULTS },
+    'POST /api/cards/AB-1/merge-request': RUNNING,
+  })
+  render(<MergeRequest cardKey="AB-1" approved />)
+  const title = await screen.findByRole('textbox', { name: 'Title' })
+  expect(title).toHaveValue(DEFAULTS.title)
+  expect(screen.getByRole('textbox', { name: 'Description' })).toHaveValue(DEFAULTS.description)
+  await userEvent.clear(title)
+  await userEvent.type(title, 'My title')
+  await userEvent.click(screen.getByRole('button', { name: 'Create merge request' }))
+  expect(fetchMock).toHaveBeenCalledWith('/api/cards/AB-1/merge-request', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'My title', description: DEFAULTS.description }),
+  })
+  expect(await screen.findByRole('textbox', { name: 'Title' })).toBeDisabled()
+  expect(screen.getByRole('textbox', { name: 'Description' })).toBeDisabled()
+})
+
+test('an empty title disables the button', async () => {
+  mockApi({
+    '/api/cards/AB-1/merge-request': NONE,
+    '/api/cards/AB-1/merge-request/defaults': { body: DEFAULTS },
+  })
+  render(<MergeRequest cardKey="AB-1" approved />)
+  await userEvent.clear(await screen.findByRole('textbox', { name: 'Title' }))
+  expect(screen.getByRole('button', { name: 'Create merge request' })).toBeDisabled()
+})
+
+test('no fields are offered once the merge request exists', async () => {
+  mockApi({ '/api/cards/AB-1/merge-request': { body: mr({ outdated: true }) } })
+  render(<MergeRequest cardKey="AB-1" approved />)
+  await screen.findByRole('button', { name: 'Push updates' })
+  expect(screen.queryByRole('textbox', { name: 'Title' })).not.toBeInTheDocument()
+  expect(screen.getByText(/does not change the title or description/)).toBeInTheDocument()
+})

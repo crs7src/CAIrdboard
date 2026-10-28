@@ -6,10 +6,11 @@ import Box from '@mui/material/Box'
 import Chip from '@mui/material/Chip'
 import Link from '@mui/material/Link'
 import Stack from '@mui/material/Stack'
+import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { useEffect, useState } from 'react'
-import { fetchMergeRequest, fetchRepoHost, startMergeRequest, type MergeRequest as MrData, type RepoProvider } from '../api'
+import { fetchMergeRequest, fetchMergeRequestDefaults, fetchRepoHost, startMergeRequest, type MergeRequest as MrData, type RepoProvider } from '../api'
 import StepButton from './StepButton'
 
 export const MR_POLL_MS = 3000
@@ -19,6 +20,8 @@ export default function MergeRequest({ cardKey, approved }: { cardKey: string; a
   const [loaded, setLoaded] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [title, setTitle] = useState<string | null>(null)
+  const [description, setDescription] = useState('')
   const [hostProvider, setHostProvider] = useState<RepoProvider>('gitlab')
 
   useEffect(() => {
@@ -46,6 +49,18 @@ export default function MergeRequest({ cardKey, approved }: { cardKey: string; a
   const Noun = noun[0].toUpperCase() + noun.slice(1)
 
   const running = mr?.state === 'running'
+  // Title and description only matter while no merge request exists on the host yet.
+  const editable = loaded && approved && !mr?.mr_url
+  useEffect(() => {
+    if (!editable || running || title !== null) return
+    fetchMergeRequestDefaults(cardKey).then(
+      (d) => {
+        setTitle(d.title)
+        setDescription(d.description)
+      },
+      () => {},
+    )
+  }, [editable, running, title, cardKey])
   useEffect(() => {
     if (!running) return
     const id = setInterval(() => {
@@ -58,7 +73,7 @@ export default function MergeRequest({ cardKey, approved }: { cardKey: string; a
     setBusy(true)
     setError(null)
     try {
-      setMr(await startMergeRequest(cardKey))
+      setMr(await startMergeRequest(cardKey, title === null ? undefined : { title, description }))
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -98,7 +113,7 @@ export default function MergeRequest({ cardKey, approved }: { cardKey: string; a
             <span onClick={(e) => e.stopPropagation()}>
               <StepButton
                 label={label}
-                status={running ? 'running' : busy || !approved ? 'blocked' : 'next'}
+                status={running ? 'running' : busy || !approved || (editable && title !== null && !title.trim()) ? 'blocked' : 'next'}
                 onRun={start}
               />
             </span>
@@ -114,6 +129,34 @@ export default function MergeRequest({ cardKey, approved }: { cardKey: string; a
                 {`${provider === 'github' ? '#' : '!'}${mr.mr_iid} ${mr.title}`}
               </Link>
               {` (${mr.branch} → ${mr.target_branch})`}
+            </Typography>
+          )}
+          {editable && title !== null && (
+            <>
+              <TextField
+                label="Title"
+                size="small"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                disabled={running || busy}
+                error={!title.trim()}
+                fullWidth
+              />
+              <TextField
+                label="Description"
+                size="small"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                disabled={running || busy}
+                multiline
+                minRows={4}
+                fullWidth
+              />
+            </>
+          )}
+          {mr?.mr_url && (
+            <Typography color="text.secondary" variant="body2">
+              Pushing updates does not change the title or description of the existing {noun}.
             </Typography>
           )}
           {mr?.outdated && (
