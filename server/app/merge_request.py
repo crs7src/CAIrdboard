@@ -25,6 +25,8 @@ class MergeRequest(BaseModel):
     branch: str
     target_branch: str
     title: str
+    # None means the generated default is used when the MR is created.
+    description: str | None = None
     provider: hosting.Provider = "gitlab"
     # Runs stored before GitHub support called this gitlab_project.
     host_project: str = Field(
@@ -60,6 +62,8 @@ class MergeRequestStore(RunStore[MergeRequest]):
         impl: Implementation,
         provider: hosting.Provider,
         host_project: str,
+        title: str | None = None,
+        description: str | None = None,
     ):
         branch = impl.branch or ""
 
@@ -71,7 +75,8 @@ class MergeRequestStore(RunStore[MergeRequest]):
                 state="running",
                 branch=branch,
                 target_branch=impl.base_branch or "main",
-                title=title_for(branch),
+                title=title or title_for(branch),
+                description=description,
                 provider=provider,
                 host_project=host_project,
                 created_at=stamp,
@@ -195,14 +200,17 @@ async def run_merge_request(
         else:
             await resolve_target(runner, repo, settings, run)
             store.save(run)
-            description = await build_description(
-                runner,
-                repo,
-                impl,
-                run.branch,
-                card,
-                closing_line(card, run.provider, run.host_project),
-            )
+            # Edits only apply to a new MR; an existing one keeps its host-side text.
+            description = run.description
+            if description is None:
+                description = await build_description(
+                    runner,
+                    repo,
+                    impl,
+                    run.branch,
+                    card,
+                    closing_line(card, run.provider, run.host_project),
+                )
             mr = await hosting.create(
                 settings,
                 run.provider,

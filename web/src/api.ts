@@ -622,6 +622,7 @@ export interface MergeRequest {
   branch: string
   target_branch: string
   title: string
+  description: string | null
   provider: RepoProvider
   host_project: string
   mr_iid: number | null
@@ -638,8 +639,24 @@ export async function fetchMergeRequest(key: string): Promise<MergeRequest | nul
   return response.json()
 }
 
-export async function startMergeRequest(key: string): Promise<MergeRequest> {
-  const response = await fetch(`/api/cards/${key}/merge-request`, { method: 'POST' })
+export interface MergeRequestDefaults {
+  title: string
+  description: string
+}
+
+export async function fetchMergeRequestDefaults(key: string): Promise<MergeRequestDefaults> {
+  const response = await fetch(`/api/cards/${key}/merge-request/defaults`)
+  if (!response.ok) throw await failure(response)
+  return response.json()
+}
+
+export async function startMergeRequest(key: string, edits?: Partial<MergeRequestDefaults>): Promise<MergeRequest> {
+  const response = await fetch(
+    `/api/cards/${key}/merge-request`,
+    edits
+      ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(edits) }
+      : { method: 'POST' },
+  )
   if (!response.ok) throw await failure(response)
   return response.json()
 }
