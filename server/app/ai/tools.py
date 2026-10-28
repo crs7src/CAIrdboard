@@ -268,6 +268,7 @@ class ToolBox:
             done = subprocess.run(
                 ["/bin/sh", "-c", command],
                 cwd=self.root,
+                check=False,
                 capture_output=True,
                 text=True,
                 timeout=BASH_TIMEOUT,
