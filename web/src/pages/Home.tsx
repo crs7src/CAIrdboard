@@ -45,6 +45,7 @@ function isEligible(config: AiConfig | null, status: string, source?: string) {
 function planStep(plan: PlanState | undefined, eligible: boolean): StepStatus {
   if (plan === 'approved') return 'done'
   if (plan === 'running') return 'running'
+  if (plan === 'failed') return 'failed'
   if (plan === 'ready') return 'next'
   return eligible ? 'next' : 'blocked'
 }
@@ -52,6 +53,7 @@ function planStep(plan: PlanState | undefined, eligible: boolean): StepStatus {
 function reviewStep(impl: ImplState | undefined, review: ReviewState | undefined): StepStatus {
   if (review === 'clean') return 'done'
   if (review === 'running') return 'running'
+  if (review === 'failed') return 'failed'
   return impl === 'completed' ? 'next' : 'blocked'
 }
 
@@ -63,18 +65,21 @@ function testStep(
 ): StepStatus {
   if (approved || test === 'running') return 'done'
   if (test === 'preparing') return 'running'
+  if (test === 'failed') return 'failed'
   return review === 'clean' && configured ? 'next' : 'blocked'
 }
 
 function mergeRequestStep(mr: MergeRequestState | 'outdated' | undefined, approved: boolean): StepStatus {
   if (mr === 'created') return 'done'
   if (mr === 'running') return 'running'
+  if (mr === 'failed') return 'failed'
   return approved ? 'next' : 'blocked'
 }
 
 function implementStep(plan: PlanState | undefined, impl: ImplState | undefined, canRun: boolean): StepStatus {
   if (impl === 'completed') return 'done'
   if (impl === 'running') return 'running'
+  if (impl === 'failed') return 'failed'
   return plan === 'approved' && canRun ? 'next' : 'blocked'
 }
 
