@@ -311,3 +311,67 @@ test('issues found while testing are sent to the code fixer', async ({ page }) =
   expect(sent).toEqual({ message: 'the save button does nothing' })
   await expect(page.getByText(/Fixes made/)).toBeVisible({ timeout: 15_000 })
 })
+
+test('approve without having run the app through this app', async ({ page }) => {
+  let approved = false
+  const methods: string[] = []
+  await page.route('**/api/cards', (route) => route.fulfill({ json: [card] }))
+  await page.route('**/api/cards/AB-1', (route) => route.fulfill({ json: card }))
+  await page.route('**/api/ai-config', (route) =>
+    route.fulfill({ json: { eligible_statuses: ['DEV In Progress'], project_repos: { AB: '/r' } } }),
+  )
+  await page.route('**/api/plans', (route) => route.fulfill({ json: { 'AB-1': 'approved' } }))
+  await page.route('**/api/implementations', (route) => route.fulfill({ json: { 'AB-1': 'completed' } }))
+  await page.route('**/api/reviews', (route) => route.fulfill({ json: { 'AB-1': 'clean' } }))
+  await page.route('**/api/tests', (route) => route.fulfill({ json: {} }))
+  await page.route('**/api/test-configs', (route) => route.fulfill({ json: [] }))
+  await page.route('**/api/test-approvals', (route) => route.fulfill({ json: approved ? ['AB-1'] : [] }))
+  await page.route('**/api/merge-requests', (route) => route.fulfill({ json: {} }))
+  await page.route('**/api/cards/AB-1/merge-request', (route) =>
+    route.fulfill({ status: 404, json: { detail: 'none' } }),
+  )
+  await page.route('**/api/repo-hosts/AB', (route) =>
+    route.fulfill({ json: { project: 'AB', repo: '/r', provider: 'gitlab', path: 'grp/app', source: 'origin', detected: null } }),
+  )
+  await page.route('**/api/cards/AB-1/plan', (route) =>
+    route.fulfill({ json: { ...base, state: 'approved', plan: '1. Do it', error: null, history: [], feedback: null } }),
+  )
+  await page.route('**/api/cards/AB-1/implementation', (route) =>
+    route.fulfill({
+      json: {
+        ...base, plan_version: 1, state: 'completed', stage: 'done', branch: 'AB-1_x', base_branch: 'main',
+        base_commit: 'abc', commits: [], notes: [], report: null, error: null,
+      },
+    }),
+  )
+  await page.route('**/api/cards/AB-1/review', (route) =>
+    route.fulfill({
+      json: {
+        ...base, implementation_version: 1, state: 'clean', branch: 'AB-1_x', base_commit: 'abc',
+        head_before: 'def', fix_commits: [], notes: [], report: null, error: null,
+      },
+    }),
+  )
+  await page.route('**/api/cards/AB-1/test/config', (route) =>
+    route.fulfill({ status: 404, json: { detail: 'none' } }),
+  )
+  await page.route('**/api/cards/AB-1/test', (route) =>
+    route.fulfill({ status: 404, json: { detail: 'No test run exists for this card' } }),
+  )
+  await page.route('**/api/cards/AB-1/feedback', (route) => route.fulfill({ json: { comments: [], run: null } }))
+  await page.route('**/api/cards/AB-1/test/approval', (route) => {
+    const method = route.request().method()
+    methods.push(method)
+    if (method === 'PUT') approved = true
+    if (method === 'DELETE') approved = false
+    return route.fulfill({ json: { approved, approved_at: approved ? 't' : null } })
+  })
+
+  await page.goto('/cards/AB-1')
+  const approve = page.getByRole('button', { name: 'Approve', exact: true })
+  await expect(approve).toBeEnabled()
+  await approve.click()
+  await expect(page.getByRole('button', { name: 'Approved', exact: true })).toBeVisible()
+  expect(methods).toContain('PUT')
+  await expect(page.getByRole('button', { name: /Merge request/ })).toBeVisible()
+})

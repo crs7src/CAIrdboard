@@ -191,22 +191,20 @@ export default function Test({
           {config && <Chip label="saved settings" size="small" variant="outlined" />}
           {approved && <Chip label="approved" size="small" color="success" />}
           <Box sx={{ flexGrow: 1 }} />
-          {run && (
-            <span onClick={(e) => e.stopPropagation()}>
-              <ToggleButton
-                value="approved"
-                size="small"
-                selected={approved}
-                disabled={preparing}
-                aria-pressed={approved}
-                onChange={toggleApproval}
-                color="success"
-              >
-                {approved && <CheckIcon fontSize="small" sx={{ mr: 0.5 }} />}
-                {approved ? 'Approved' : 'Approve'}
-              </ToggleButton>
-            </span>
-          )}
+          <span onClick={(e) => e.stopPropagation()}>
+            <ToggleButton
+              value="approved"
+              size="small"
+              selected={approved}
+              disabled={preparing}
+              aria-pressed={approved}
+              onChange={toggleApproval}
+              color="success"
+            >
+              {approved && <CheckIcon fontSize="small" sx={{ mr: 0.5 }} />}
+              {approved ? 'Approved' : 'Approve'}
+            </ToggleButton>
+          </span>
           {!active && (
             <span onClick={(e) => e.stopPropagation()}>
               <StepButton
