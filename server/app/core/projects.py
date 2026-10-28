@@ -5,6 +5,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from app.ai import PROVIDERS, is_configured, resolve_provider_id
 from app.core.ai_config import AiConfig
 from app.core.config import Settings
 from app.core.db import Database
@@ -44,6 +45,9 @@ class Project(BaseModel):
     gitlab_connected: bool
     github_connected: bool
     test_apps_configured: bool
+    # The project's own choice (None: the default) and what is actually used.
+    ai_provider: str | None = None
+    effective_ai_provider: str = "copilot"
     status: list[SetupItem]
     cards: list[ProjectCard] | None = None
     card_warnings: str | None = None
@@ -59,6 +63,7 @@ def _status(
     repo_exists: bool,
     host: hosting.RepoHost,
     tests: bool,
+    ai_provider: str = "copilot",
 ) -> list[SetupItem]:
     items = [SetupItem(id="repo", label="Local repo found", done=repo_exists)]
     if jira_on:
@@ -77,6 +82,14 @@ def _status(
             )
         )
     items.append(SetupItem(id="tests", label="Test apps set", done=tests))
+    items.append(
+        SetupItem(
+            id="ai",
+            label=f"AI provider: {PROVIDERS[ai_provider].label}"
+            + ("" if is_configured(settings, ai_provider) else " (no API key)"),
+            done=is_configured(settings, ai_provider),
+        )
+    )
     return items
 
 
@@ -88,6 +101,7 @@ async def build_project(
     host = await hosting.resolve(settings, db, key, repo)
     tests = key in tester.ConfigStore(db).projects()
     jira_on = is_jira_key(key)
+    effective = resolve_provider_id(config, key)
     return Project(
         key=key,
         name=config.project_names.get(key) or key,
@@ -99,7 +113,9 @@ async def build_project(
         gitlab_connected=settings.gitlab_configured,
         github_connected=settings.github_configured,
         test_apps_configured=tests,
-        status=_status(settings, jira_on, repo_exists, host, tests),
+        ai_provider=config.project_providers.get(key),
+        effective_ai_provider=effective,
+        status=_status(settings, jira_on, repo_exists, host, tests, effective),
     )
 
 

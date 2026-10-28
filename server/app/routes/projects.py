@@ -3,6 +3,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ValidationError, field_validator
 
+from app.ai import PROVIDERS
 from app.core import projects
 from app.core.ai_config import AiConfig, load_ai_config, save_ai_config
 from app.core.config import (
@@ -31,6 +32,16 @@ class ProjectBody(BaseModel):
     jira_enabled: bool = True
     provider: hosting.Provider | None = None
     host_path: str | None = None
+    # AI provider id; blank means the default. Omitted on update keeps the current one.
+    ai_provider: str | None = None
+
+    @field_validator("ai_provider")
+    @classmethod
+    def known_provider(cls, v: str | None) -> str | None:
+        v = (v or "").strip().lower()
+        if v and v not in PROVIDERS:
+            raise ValueError(f"Unknown AI provider '{v}'")
+        return v or None
 
     @field_validator("name", "repo_path")
     @classmethod
@@ -76,6 +87,10 @@ def _save_project(
 ) -> None:
     config.project_repos[key] = body.repo_path
     config.project_names[key] = body.name
+    if body.ai_provider:
+        config.project_providers[key] = body.ai_provider
+    elif "ai_provider" in body.model_fields_set:
+        config.project_providers.pop(key, None)
     save_ai_config(settings.ai_config_file, config)
     mappings = hosting.Mappings(_db(settings))
     if host:
@@ -179,5 +194,6 @@ def delete_project(key: str, settings: SettingsDep) -> None:
     key = _known_project(config, key)
     config.project_repos.pop(key)
     config.project_names.pop(key, None)
+    config.project_providers.pop(key, None)
     save_ai_config(settings.ai_config_file, config)
     hosting.Mappings(_db(settings)).delete(key)
