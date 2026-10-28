@@ -1,5 +1,5 @@
-from app.config import Settings
-from app.db import Database
+from app.core.config import Settings
+from app.core.db import Database
 
 
 def db() -> Database:
