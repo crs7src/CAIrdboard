@@ -2,8 +2,11 @@ import Alert from '@mui/material/Alert'
 import Autocomplete from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import FormControlLabel from '@mui/material/FormControlLabel'
+import FormHelperText from '@mui/material/FormHelperText'
 import IconButton from '@mui/material/IconButton'
 import Stack from '@mui/material/Stack'
+import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import DeleteIcon from '@mui/icons-material/Delete'
@@ -25,12 +28,14 @@ export default function AiSettings() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const [autoReview, setAutoReview] = useState(true)
 
   useEffect(() => {
     fetchAiConfig().then(
       (c) => {
         setStatuses(c.eligible_statuses.join(', '))
         setRows(Object.entries(c.project_repos).map(([project, path]) => ({ project, path })))
+        setAutoReview(c.auto_review ?? true)
         setLoaded(true)
       },
       (e: Error) => setError(e.message),
@@ -57,6 +62,7 @@ export default function AiSettings() {
         project_repos: Object.fromEntries(
           rows.filter((r) => r.project.trim() || r.path.trim()).map((r) => [r.project, r.path]),
         ),
+        auto_review: autoReview,
       })
       setSaved(true)
     } catch (err) {
@@ -81,6 +87,23 @@ export default function AiSettings() {
             setSaved(false)
           }}
         />
+        <Box>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={autoReview}
+                onChange={(e) => {
+                  setAutoReview(e.target.checked)
+                  setSaved(false)
+                }}
+              />
+            }
+            label="Automatically start the review when implementation completes"
+          />
+          <FormHelperText>
+            Also applies after review-comment and manual-testing fixes. When off, start the review yourself with the Review button.
+          </FormHelperText>
+        </Box>
         <Typography variant="h6" component="h2">
           Project repositories
         </Typography>

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections.abc import Awaitable
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -51,6 +52,17 @@ def _states(store, recover) -> dict[str, str]:
         latest = recover(store, store.latest(key))
         if latest:
             states[key] = latest.state
+    return states
+
+
+def _implementation_states(settings: Settings) -> dict[str, str]:
+    """Implementation states; a card whose feedback changes are being made is running."""
+    states = _states(
+        implementer.ImplementationStore(_db(settings)), implementer.recover_stale
+    )
+    for key in feedback.ACTIVE:
+        if key in states:
+            states[key] = "running"
     return states
 
 
@@ -271,6 +283,8 @@ def put_ai_config(config: AiConfig, settings: SettingsDep) -> AiConfig:
     # Older clients (the AI settings tab) send no names; keep the saved ones.
     if "project_names" not in config.model_fields_set:
         config.project_names = load_ai_config(settings.ai_config_file).project_names
+    if "auto_review" not in config.model_fields_set:
+        config.auto_review = load_ai_config(settings.ai_config_file).auto_review
     config.project_names = {
         k: n for k, n in config.project_names.items() if k in config.project_repos
     }
@@ -370,9 +384,7 @@ def plan_states(settings: SettingsDep) -> dict[str, str]:
 @app.get("/api/implementations")
 def implementation_states(settings: SettingsDep) -> dict[str, str]:
     """Latest implementation state for every card that has one."""
-    return _states(
-        implementer.ImplementationStore(_db(settings)), implementer.recover_stale
-    )
+    return _implementation_states(settings)
 
 
 class PlanRequest(BaseModel):
@@ -501,17 +513,75 @@ async def start_implementation(
     implementer.ACTIVE.add(key)
     implementer.ACTIVE_REPOS.add(repo)
     background.add_task(
-        implementer.run_implementation,
+        _implement_then_review,
+        settings,
+        runner,
         store,
         run,
         card,
         plan.plan,
         repo,
+    )
+    return run
+
+
+async def _implement_then_review(
+    settings: Settings,
+    runner: object,
+    store: implementer.ImplementationStore,
+    run: implementer.Implementation,
+    card: jira.Card,
+    plan_text: str,
+    repo: str,
+) -> None:
+    await implementer.run_implementation(
+        store,
+        run,
+        card,
+        plan_text,
+        repo,
         settings.copilot_command,
         settings.implement_timeout_seconds,
         runner,
     )
-    return run
+    await _auto_review(settings, runner, run.card_key, run.version, store)
+
+
+async def _auto_review(
+    settings: Settings,
+    runner: object,
+    key: str,
+    version: int,
+    store: object,
+    done_state: str = "completed",
+) -> None:
+    """Start a review after a run that changed code, if the setting is on.
+
+    The run has released the card and repo by now. The setting is read here so
+    a change made while the run was going is honoured.
+    """
+    try:
+        latest = store.latest(key)
+        if (
+            latest is None
+            or latest.version != version
+            or latest.state != done_state
+            or not load_ai_config(settings.ai_config_file).auto_review
+        ):
+            return
+        _, args = await _prepare_review(key, settings, runner)
+        await reviewer.run_review(*args)
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "Automatic review of %s was not started", key, exc_info=True
+        )
+
+
+async def _feedback_then_review(
+    settings: Settings, runner: object, store: feedback.FeedbackStore, run, *args
+) -> None:
+    await feedback.run_feedback(store, run, *args)
+    await _auto_review(settings, runner, run.card_key, run.version, store, "done")
 
 
 @app.get("/api/cards/{key}/implementation")
@@ -540,14 +610,13 @@ def review_states(settings: SettingsDep) -> dict[str, str]:
     return _states(reviewer.ReviewStore(_db(settings)), reviewer.recover_stale)
 
 
-@app.post("/api/cards/{key}/review", status_code=202)
-async def start_review(
-    key: str,
-    settings: SettingsDep,
-    runner: RunnerDep,
-    background: BackgroundTasks,
-) -> reviewer.Review:
-    """Review the completed implementation in a fresh AI session; it may commit fixes."""
+async def _prepare_review(
+    key: str, settings: Settings, runner: object
+) -> tuple[reviewer.Review, tuple]:
+    """Check a review can start, create the run and claim the card and repo.
+
+    Returns the run and the arguments for ``reviewer.run_review``.
+    """
     key = _valid_key(key)
     impl_store = implementer.ImplementationStore(_db(settings))
     impl = impl_store.latest(key)
@@ -575,8 +644,7 @@ async def start_review(
     run = store.create(key, impl)
     reviewer.ACTIVE.add(key)
     implementer.ACTIVE_REPOS.add(repo)
-    background.add_task(
-        reviewer.run_review,
+    return run, (
         store,
         run,
         impl,
@@ -587,6 +655,18 @@ async def start_review(
         settings.review_timeout_seconds,
         runner,
     )
+
+
+@app.post("/api/cards/{key}/review", status_code=202)
+async def start_review(
+    key: str,
+    settings: SettingsDep,
+    runner: RunnerDep,
+    background: BackgroundTasks,
+) -> reviewer.Review:
+    """Review the completed implementation in a fresh AI session; it may commit fixes."""
+    run, args = await _prepare_review(key, settings, runner)
+    background.add_task(reviewer.run_review, *args)
     return run
 
 
@@ -711,7 +791,9 @@ def _start_feedback(
     feedback.ACTIVE.add(key)
     implementer.ACTIVE_REPOS.add(repo)
     background.add_task(
-        feedback.run_feedback,
+        _feedback_then_review,
+        settings,
+        runner,
         store,
         run,
         impl,
@@ -1328,9 +1410,7 @@ async def get_project(key: str, settings: SettingsDep) -> projects.Project:
     db = _db(settings)
     states = {
         "plan": _states(planner.PlanStore(db), planner.recover_stale),
-        "implementation": _states(
-            implementer.ImplementationStore(db), implementer.recover_stale
-        ),
+        "implementation": _implementation_states(settings),
         "review": _states(reviewer.ReviewStore(db), reviewer.recover_stale),
         "test": _states(_test_store(settings), tester.recover_stale),
     }

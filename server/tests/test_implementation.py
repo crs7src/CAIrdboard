@@ -463,3 +463,81 @@ def test_implementations_listing(env, client):
     run.state = "completed"
     store.save(run)
     assert client.get("/api/implementations").json() == {"AB-1": "completed"}
+
+
+# ---- automatic review ------------------------------------------------------
+
+
+def set_auto_review(tmp_path, work, value):
+    save_ai_config(
+        tmp_path / "ai.json",
+        AiConfig(project_repos={"AB": str(work)}, auto_review=value),
+    )
+
+
+@respx.mock
+def test_completed_implementation_starts_a_review(client, env):
+    from app import reviewer
+
+    tmp_path, _ = env
+    mock_jira()
+    approve_plan(tmp_path)
+
+    # Only the implementation makes commits; the review finds nothing to fix.
+    class OnceAI(FakeAI):
+        async def __call__(self, args, cwd, timeout):
+            result = await super().__call__(args, cwd, timeout)
+            if args[0] != "git" and SUMMARY_MARKER not in args[args.index("-p") + 1]:
+                self.commits = ()
+            return result
+
+    app.dependency_overrides[get_runner] = lambda: OnceAI()
+    assert client.post("/api/cards/AB-1/implementation").status_code == 202
+    review = reviewer.ReviewStore(db()).latest("AB-1")
+    assert review is not None and review.state == "clean"
+    assert implementer.ACTIVE_REPOS == set() and reviewer.ACTIVE == set()
+
+
+@respx.mock
+def test_no_review_when_auto_review_is_off(client, env):
+    from app import reviewer
+
+    tmp_path, work = env
+    set_auto_review(tmp_path, work, False)
+    mock_jira()
+    approve_plan(tmp_path)
+    assert client.post("/api/cards/AB-1/implementation").status_code == 202
+    assert client.get("/api/cards/AB-1/implementation").json()["state"] == "completed"
+    assert reviewer.ReviewStore(db()).latest("AB-1") is None
+
+
+@respx.mock
+def test_no_review_after_a_failed_implementation(client, env, ai):
+    from app import reviewer
+
+    tmp_path, _ = env
+    ai.returncode = 1
+    mock_jira()
+    approve_plan(tmp_path)
+    assert client.post("/api/cards/AB-1/implementation").status_code == 202
+    assert client.get("/api/cards/AB-1/implementation").json()["state"] == "failed"
+    assert reviewer.ReviewStore(db()).latest("AB-1") is None
+
+
+@respx.mock
+def test_refused_auto_review_keeps_the_implementation_completed(
+    client, env, monkeypatch
+):
+    from app import main, reviewer
+
+    tmp_path, _ = env
+
+    async def refuse(*args, **kwargs):
+        raise main.HTTPException(409, "busy")
+
+    monkeypatch.setattr(main, "_prepare_review", refuse)
+    mock_jira()
+    approve_plan(tmp_path)
+    assert client.post("/api/cards/AB-1/implementation").status_code == 202
+    assert client.get("/api/cards/AB-1/implementation").json()["state"] == "completed"
+    assert reviewer.ReviewStore(db()).latest("AB-1") is None
