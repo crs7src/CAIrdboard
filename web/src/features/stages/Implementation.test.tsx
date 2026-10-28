@@ -103,3 +103,22 @@ test('is collapsed by default and shows the status in the header', async () => {
   expect(header).toHaveAttribute('aria-expanded', 'false')
   expect(screen.getByText('not started')).toBeInTheDocument()
 })
+
+test('shows applying feedback while fixing, polls, and reports the state changes', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  mockApi({
+    '/api/cards/AB-1/implementation': [
+      { body: implementation({ state: 'running', stage: 'fixing' }) },
+      { body: implementation() },
+    ],
+  })
+  const onStateChange = vi.fn()
+  render(<Implementation cardKey="AB-1" onStateChange={onStateChange} />)
+  await openImpl()
+  expect(await screen.findByText('Applying feedback...')).toBeInTheDocument()
+  expect(onStateChange).toHaveBeenLastCalledWith('running')
+
+  await vi.advanceTimersByTimeAsync(IMPL_POLL_MS + 100)
+  await vi.waitFor(() => expect(onStateChange).toHaveBeenLastCalledWith('completed'))
+  expect(screen.queryByText('Applying feedback...')).not.toBeInTheDocument()
+})
