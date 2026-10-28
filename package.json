@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "dev": "concurrently -n api,web \"cd server && uv run uvicorn app.main:app --reload --port 6100\" \"npm --prefix web run dev\"",
+    "start": "npm run build && concurrently -n api,web \"cd server && uv run uvicorn app.main:app --port 6100\" \"npm --prefix web run preview\"",
     "build": "npm --prefix web run build",
     "lint": "npm --prefix web run lint && cd server && uv run ruff check . && uv run ruff format --check .",
     "test": "npm --prefix web test && cd server && uv run pytest",
