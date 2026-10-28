@@ -233,3 +233,17 @@ def test_a_target_missing_on_origin_falls_back_to_the_default_branch(client, env
     run = client.get("/api/cards/AB-1/merge-request").json()
     assert run["state"] == "created" and run["target_branch"] == "main"
     assert json.loads(create.calls.last.request.content)["target_branch"] == "main"
+
+
+@respx.mock
+def test_defaults_endpoint(client, env):
+    tmp_path, work = env
+    mock_jira()
+    assert client.get("/api/cards/AB-1/merge-request/defaults").status_code == 409
+    ready(tmp_path, work, approved=False)
+    body = client.get("/api/cards/AB-1/merge-request/defaults").json()
+    assert body["title"] == "AB-1 add dark mode"
+    assert "[AB-1](https://example.atlassian.net/browse/AB-1)" in body["description"]
+    assert "- AB-1: step 1 - add toggle" in body["description"]
+    assert client.get("/api/cards/bad/merge-request/defaults").status_code == 404
+    assert client.get("/api/cards/AB-1/merge-request").status_code == 404
