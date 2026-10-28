@@ -661,7 +661,10 @@ async def submit_feedback(
         raise HTTPException(409, "Add at least one comment first")
     card = await _load_card(settings, key)
     repo = _repo_for_key(settings, key)
+    return _start_feedback(settings, runner, background, store, impl, plan, card, repo)
 
+
+def _check_feedback_idle(store: feedback.FeedbackStore, key: str) -> None:
     previous = feedback.recover_stale(store, store.latest(key))
     if (
         key in feedback.ACTIVE
@@ -670,6 +673,21 @@ async def submit_feedback(
         or (previous and previous.state == "running")
     ):
         raise HTTPException(409, "This card is already being worked on")
+
+
+def _start_feedback(
+    settings: Settings,
+    runner,
+    background: BackgroundTasks,
+    store: feedback.FeedbackStore,
+    impl,
+    plan,
+    card,
+    repo: str,
+) -> feedback.FeedbackRun:
+    """Check the card and repo are free, then start a run on the pending comments."""
+    key = card.key
+    _check_feedback_idle(store, key)
     if repo in implementer.ACTIVE_REPOS:
         raise HTTPException(
             409, "Another run is in progress in this repo. Wait for it to finish."
@@ -858,6 +876,28 @@ async def report_test_problem(
         previous=previous,
     )
     return run
+
+
+@app.post("/api/cards/{key}/test/feedback", status_code=202)
+async def send_test_feedback(
+    key: str,
+    body: TestProblemBody,
+    settings: SettingsDep,
+    runner: RunnerDep,
+    background: BackgroundTasks,
+) -> feedback.FeedbackRun:
+    """Hand issues found in manual testing to the AI that fixes review comments."""
+    key = _valid_key(key)
+    impl, _review, plan, card, repo = await _test_context(settings, key)
+    test_store = _test_store(settings)
+    previous = tester.recover_stale(test_store, test_store.latest(key))
+    _check_test_free(key, repo, previous, stoppable=True)
+    store = feedback.FeedbackStore(_db(settings))
+    _check_feedback_idle(store, key)
+    if key in tester.APPS:
+        await tester.stop_app(test_store, key)
+    store.add(key, feedback.CommentInput(text=body.message, origin="testing"))
+    return _start_feedback(settings, runner, background, store, impl, plan, card, repo)
 
 
 class ApprovalState(BaseModel):
