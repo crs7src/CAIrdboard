@@ -658,17 +658,12 @@ def test_lists_projects_that_have_settings(client, env):
 
 
 @respx.mock
-def test_approving_the_manual_test_needs_a_run_and_can_be_undone(client, env):
-    tmp_path, work = env
+def test_approving_the_manual_test_works_without_a_run_and_can_be_undone(client, env):
     mock_jira()
-    assert client.put("/api/cards/AB-1/test/approval").status_code == 409
     assert client.get("/api/cards/AB-1/test/approval").json() == {
         "approved": False,
         "approved_at": None,
     }
-    approve_plan(tmp_path)
-    impl = make_impl(tmp_path, work)
-    tester.TestStore(db(), tmp_path).create("AB-1", impl, 1)
     body = client.put("/api/cards/AB-1/test/approval").json()
     assert body["approved"] is True and body["approved_at"]
     assert client.get("/api/test-approvals").json() == ["AB-1"]

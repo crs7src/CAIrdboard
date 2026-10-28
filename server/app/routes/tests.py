@@ -257,8 +257,6 @@ def get_test_approval(key: str, settings: SettingsDep) -> ApprovalState:
 def approve_test(key: str, settings: SettingsDep) -> ApprovalState:
     """Approve the card's manual test. Changing the branch later withdraws it."""
     key = _valid_key(key)
-    if _test_store(settings).latest(key) is None:
-        raise HTTPException(409, "The card has not been manually tested yet")
     Approvals(_db(settings)).approve(key)
     return _approval(settings, key)
 
