@@ -126,12 +126,15 @@ async def _auto_review(
             or not load_ai_config(settings.ai_config_file).auto_review
         ):
             return
+        reviewer.PENDING.add(key)
         _, args = await _prepare_review(key, settings, runner)
         await reviewer.run_review(*args)
     except Exception:
         logging.getLogger(__name__).warning(
             "Automatic review of %s was not started", key, exc_info=True
         )
+    finally:
+        reviewer.PENDING.discard(key)
 
 
 async def _feedback_then_review(

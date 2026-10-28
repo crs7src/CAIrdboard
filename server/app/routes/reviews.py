@@ -21,7 +21,8 @@ router = APIRouter()
 @router.get("/api/reviews")
 def review_states(settings: SettingsDep) -> dict[str, str]:
     """Latest review state for every card that has one."""
-    return _states(reviewer.ReviewStore(_db(settings)), reviewer.recover_stale)
+    states = _states(reviewer.ReviewStore(_db(settings)), reviewer.recover_stale)
+    return {**states, **dict.fromkeys(reviewer.PENDING, "running")}
 
 
 async def _prepare_review(

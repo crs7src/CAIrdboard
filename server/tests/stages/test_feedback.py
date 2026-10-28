@@ -263,6 +263,17 @@ def test_active_feedback_run_shows_the_implementation_as_fixing(client, env):
     assert client.get("/api/implementations").json() == {"AB-1": "completed"}
 
 
+def test_pending_automatic_review_is_listed_as_running(client):
+    from app.stages import reviewer
+
+    assert client.get("/api/reviews").json() == {}
+    reviewer.PENDING.add("AB-1")
+    try:
+        assert client.get("/api/reviews").json() == {"AB-1": "running"}
+    finally:
+        reviewer.PENDING.discard("AB-1")
+
+
 # ---- run_feedback directly --------------------------------------------------
 
 
