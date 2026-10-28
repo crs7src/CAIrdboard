@@ -150,6 +150,9 @@ async def get_implementation(
     run = implementer.recover_stale(store, store.latest(key))
     if run is None:
         raise HTTPException(404, "No implementation exists for this card")
+    if key in feedback.ACTIVE:
+        # Feedback fixes reuse the implementation UI: the card is being worked on again.
+        run = run.model_copy(update={"state": "running", "stage": "fixing"})
     if run.state == "running" and run.base_commit:
         # Show commits as they land while the AI is still working.
         try:
