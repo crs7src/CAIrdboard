@@ -11,13 +11,14 @@ import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
 import { fetchReview, startReview, type Review as ReviewData } from '../../api'
 import ProviderChip from '../../shared/ProviderChip'
 import StepButton from '../cards/StepButton'
 
 export const REVIEW_POLL_MS = 3000
+const AWAIT_NEW_TRIES = 20
 
 const STATE_LABEL = {
   running: 'running',
@@ -29,18 +30,24 @@ const STATE_LABEL = {
 export default function Review({
   cardKey,
   onStateChange,
+  awaitNew = false,
 }: {
   cardKey: string
+  // After a fix run: poll for the review the server starts by itself, until a new version shows up.
+  awaitNew?: boolean
   onStateChange?: (state: ReviewData['state'] | undefined) => void
 }) {
   const [review, setReview] = useState<ReviewData | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const firstVersion = useRef<number | null | undefined>(undefined)
+  const [waiting, setWaiting] = useState(awaitNew)
 
   useEffect(() => {
     fetchReview(cardKey).then(
       (r) => {
+        firstVersion.current = r?.version ?? null
         setReview(r)
         setLoaded(true)
       },
@@ -63,6 +70,24 @@ export default function Review({
     }, REVIEW_POLL_MS)
     return () => clearInterval(id)
   }, [running, cardKey])
+
+  useEffect(() => {
+    if (!waiting || !loaded) return
+    let tries = 0
+    const id = setInterval(() => {
+      tries += 1
+      fetchReview(cardKey).then(
+        (r) => {
+          if (r && r.version !== firstVersion.current) {
+            setReview(r)
+            setWaiting(false)
+          } else if (tries >= AWAIT_NEW_TRIES) setWaiting(false)
+        },
+        () => setWaiting(false),
+      )
+    }, REVIEW_POLL_MS)
+    return () => clearInterval(id)
+  }, [waiting, loaded, cardKey])
 
   async function start() {
     setBusy(true)

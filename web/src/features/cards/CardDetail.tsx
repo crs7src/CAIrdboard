@@ -46,9 +46,20 @@ export default function CardDetail() {
   const [planOpen, setPlanOpen] = useState(searchParams.get('open') === 'plan')
   const [focusApprove, setFocusApprove] = useState(false)
   const [implState, setImplState] = useState<string | null>(null)
+  const [fixTick, setFixTick] = useState(0)
+  const [reviewEpoch, setReviewEpoch] = useState(0)
+  const prevImplState = useRef<string | null>(null)
   const [reviewState, setReviewState] = useState<string | undefined>()
   const [testApproved, setTestApproved] = useState(false)
   const approveRef = useRef<HTMLButtonElement>(null)
+
+  const onImplState = useCallback((s: string | null) => {
+    // A finished fix run: refetch Review, since the server starts one by itself.
+    if (prevImplState.current === 'running' && s === 'completed') setReviewEpoch((e) => e + 1)
+    prevImplState.current = s
+    setImplState(s)
+  }, [])
+  const onFixStarted = useCallback(() => setFixTick((t) => t + 1), [])
 
   useEffect(() => {
     Promise.all([fetchCardDetail(key), fetchPlan(key)]).then(
@@ -317,12 +328,17 @@ export default function CardDetail() {
       )}
 
       {plan?.state === 'approved' && card.repo_configured && (
-        <Implementation cardKey={key} onStateChange={setImplState} />
+        <Implementation cardKey={key} onStateChange={onImplState} refreshKey={fixTick} />
       )}
       {plan?.state === 'approved' && card.repo_configured && implState === 'completed' && (
         <>
-          <Review cardKey={key} onStateChange={setReviewState} />
-          {reviewState === 'clean' && <Test cardKey={key} onApprovalChange={setTestApproved} />}
+          <Review
+            key={reviewEpoch}
+            cardKey={key}
+            onStateChange={setReviewState}
+            awaitNew={reviewEpoch > 0}
+          />
+          {reviewState === 'clean' && <Test cardKey={key} onApprovalChange={setTestApproved} onFixStarted={onFixStarted} />}
           <MergeRequest cardKey={key} approved={testApproved && reviewState === 'clean'} />
         </>
       )}

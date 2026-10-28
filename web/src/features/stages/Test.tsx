@@ -38,7 +38,6 @@ import ProviderChip from '../../shared/ProviderChip'
 import StepButton from '../cards/StepButton'
 
 export const TEST_POLL_MS = 3000
-export const FEEDBACK_POLL_MS = 2000
 
 const STATE_LABEL = {
   preparing: 'starting the app',
@@ -50,9 +49,12 @@ const STATE_LABEL = {
 export default function Test({
   cardKey,
   onApprovalChange,
+  onFixStarted,
 }: {
   cardKey: string
   onApprovalChange?: (approved: boolean) => void
+  // Called once the issues were sent; the card page then shows the fix as implementation work.
+  onFixStarted?: () => void
 }) {
   const [run, setRun] = useState<TestRun | null>(null)
   const [loaded, setLoaded] = useState(false)
@@ -118,19 +120,6 @@ export default function Test({
   }, [cardKey])
 
   const fixing = fixRun?.state === 'running'
-  useEffect(() => {
-    if (!fixing) return
-    const id = setInterval(() => {
-      fetchFeedback(cardKey).then((f) => {
-        setFixRun(f.run)
-        if (f.run?.state === 'running') return
-        // A finished fix run changes the branch and may clear the approval.
-        fetchTest(cardKey).then(setRun, () => {})
-        fetchTestApproval(cardKey).then((a) => setApproved(a.approved), () => setApproved(false))
-      }, () => {})
-    }, FEEDBACK_POLL_MS)
-    return () => clearInterval(id)
-  }, [fixing, cardKey])
 
   async function sendIssues() {
     setBusy(true)
@@ -140,6 +129,7 @@ export default function Test({
       setIssues('')
       setApproved(false)
       fetchTest(cardKey).then(setRun, () => {})
+      onFixStarted?.()
     } catch (e) {
       setError((e as Error).message)
     } finally {
