@@ -25,6 +25,7 @@ async function mockPolling(page: import('@playwright/test').Page, finalState: st
   await page.route('**/api/test-approvals', (route) => route.fulfill({ json: [] }))
   await page.route('**/api/test-configs', (route) => route.fulfill({ json: [] }))
   await page.route('**/api/merge-requests', (route) => route.fulfill({ json: {} }))
+  await page.route('**/api/merge-requests/urls', (route) => route.fulfill({ json: {} }))
   await page.route('**/api/implementations', (route) =>
     route.fulfill({ json: { 'AB-1': polls++ < 1 ? 'running' : finalState } }),
   )

@@ -80,6 +80,7 @@ def test_pushes_the_branch_and_creates_the_mr(client, env):
     assert "[AB-1](https://example.atlassian.net/browse/AB-1)" in sent["description"]
     assert "- AB-1: step 1 - add toggle" in sent["description"]
     assert client.get("/api/merge-requests").json() == {"AB-1": "created"}
+    assert client.get("/api/merge-requests/urls").json() == {"AB-1": CREATED["web_url"]}
 
 
 @respx.mock
@@ -290,3 +291,7 @@ def test_blank_title_is_422(client, env):
     response = client.post("/api/cards/AB-1/merge-request", json={"title": "  "})
     assert response.status_code == 422
     assert client.get("/api/cards/AB-1/merge-request").status_code == 404
+
+
+def test_urls_are_empty_without_runs(client, env):
+    assert client.get("/api/merge-requests/urls").json() == {}

@@ -81,6 +81,9 @@ test('approve the test, create the merge request and follow its link', async ({ 
   await page.route('**/api/merge-requests', (route) =>
     route.fulfill({ json: mr ? { 'AB-1': mr.state } : {} }),
   )
+  await page.route('**/api/merge-requests/urls', (route) =>
+    route.fulfill({ json: mr?.state === 'created' ? { 'AB-1': MR_URL } : {} }),
+  )
   await page.route('**/api/cards/AB-1/merge-request', (route) => {
     if (route.request().method() === 'POST') {
       polls = 0
@@ -112,5 +115,7 @@ test('approve the test, create the merge request and follow its link', async ({ 
   await expect(page.getByText('created', { exact: true })).toBeVisible()
 
   await page.goto('/')
-  await expect(page.getByRole('img', { name: 'Create MR' })).toBeVisible()
+  const homeLink = page.getByRole('link', { name: 'Create MR' })
+  await expect(homeLink).toHaveAttribute('href', MR_URL)
+  await expect(homeLink).toHaveAttribute('target', '_blank')
 })
