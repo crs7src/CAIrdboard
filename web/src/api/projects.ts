@@ -1,4 +1,5 @@
 import { failure, json } from './client'
+import type { AiProviderId } from './ai'
 import type { RepoHostInfo, RepoProvider } from './hosts'
 
 export interface SetupItem {
@@ -31,6 +32,8 @@ export interface Project {
   gitlab_connected: boolean
   github_connected: boolean
   test_apps_configured: boolean
+  ai_provider: AiProviderId | null
+  effective_ai_provider: AiProviderId
   status: SetupItem[]
   // Only present on the single-project endpoint.
   cards: ProjectCard[] | null
@@ -44,6 +47,7 @@ export interface ProjectInput {
   jira_enabled: boolean
   provider?: RepoProvider | null
   host_path?: string | null
+  ai_provider?: AiProviderId | null
 }
 
 export async function fetchProjects(): Promise<Project[]> {

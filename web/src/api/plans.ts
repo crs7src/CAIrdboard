@@ -3,6 +3,8 @@ import { failure } from './client'
 export type PlanState = 'running' | 'ready' | 'failed' | 'approved' | 'rejected'
 
 export interface Plan {
+  // The AI that ran it; null when none was used.
+  provider?: string | null
   card_key: string
   version: number
   state: PlanState

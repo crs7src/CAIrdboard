@@ -14,6 +14,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { useEffect, useState } from 'react'
 import Markdown from 'react-markdown'
 import { fetchReview, startReview, type Review as ReviewData } from '../../api'
+import ProviderChip from '../../shared/ProviderChip'
 import StepButton from '../cards/StepButton'
 
 export const REVIEW_POLL_MS = 3000
@@ -94,6 +95,7 @@ export default function Review({
               review?.state === 'clean' ? 'success' : review?.state === 'failed' ? 'error' : review?.state === 'fixed' ? 'warning' : 'default'
             }
           />
+          <ProviderChip provider={review?.provider} />
           <Box sx={{ flexGrow: 1 }} />
           {!done && (
             <span onClick={(e) => e.stopPropagation()}>

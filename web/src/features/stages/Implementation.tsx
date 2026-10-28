@@ -18,6 +18,7 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import { useEffect, useState } from 'react'
 import Markdown from 'react-markdown'
 import { fetchImplementation, startImplementation, type Implementation as Impl } from '../../api'
+import ProviderChip from '../../shared/ProviderChip'
 
 export const IMPL_POLL_MS = 3000
 
@@ -92,6 +93,7 @@ export default function Implementation({ cardKey, onStateChange }: Props) {
               impl?.state === 'completed' ? 'success' : impl?.state === 'failed' ? 'error' : 'default'
             }
           />
+          <ProviderChip provider={impl?.provider} />
           {impl?.branch && <Chip label={impl.branch} size="small" variant="outlined" />}
           {running && <CircularProgress size={18} aria-label="Implementing" />}
           <Box sx={{ flexGrow: 1 }} />

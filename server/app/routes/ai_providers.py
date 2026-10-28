@@ -20,6 +20,7 @@ class ProviderStatus(BaseModel):
     model: str | None
     default_model: str | None
     needs_key: bool
+    is_default: bool
     supports_agent: bool
 
 
@@ -51,6 +52,7 @@ def _status(settings: Settings, config: AiConfig, provider_id: str) -> ProviderS
         model=model_for(config, provider_id),
         default_model=info.default_model,
         needs_key=provider_id != "copilot",
+        is_default=config.default_provider == provider_id,
         supports_agent=info.supports_agent,
     )
 

@@ -24,12 +24,16 @@ import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUnchecked'
 import { useEffect, useState } from 'react'
 import { Link as RouterLink } from 'react-router-dom'
 import {
+  AI_PROVIDER_LABELS,
   checkRepoHost,
   createProject,
   deleteProject,
+  fetchAiProviders,
   fetchProject,
   fetchProjects,
   updateProject,
+  type AiProvider,
+  type AiProviderId,
   type Project,
   type ProjectCard,
   type ProjectInput,
@@ -75,6 +79,7 @@ function groupOf(c: ProjectCard): (typeof GROUPS)[number] {
 function settingsLink(project: Project, item: SetupItem): string | null {
   if (item.id === 'jira') return '/settings/jira'
   if (item.id === 'tests') return '/settings/test-apps'
+  if (item.id === 'ai') return '/settings/ai-providers'
   if (item.id === 'host_credentials' && project.host.provider) return `/settings/${project.host.provider}`
   return null
 }
@@ -139,9 +144,16 @@ function ProjectForm({ project, onClose, onSaved }: FormProps) {
   const [key, setKey] = useState(project?.key ?? '')
   const [repo, setRepo] = useState(project?.repo_path ?? '')
   const [hostPath, setHostPath] = useState(project?.host.source === 'override' ? (project.host.path ?? '') : '')
+  const [aiProvider, setAiProvider] = useState<AiProviderId | ''>(project?.ai_provider ?? '')
+  const [providers, setProviders] = useState<AiProvider[]>([])
   const [picking, setPicking] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetchAiProviders().then(setProviders, () => setProviders([]))
+  }, [])
+  const defaultProvider = providers.find((p) => p.is_default)
 
   const jira = kind !== 'github'
   const provider = kind === 'jira_gitlab' ? 'gitlab' : 'github'
@@ -159,6 +171,7 @@ function ProjectForm({ project, onClose, onSaved }: FormProps) {
       jira_enabled: jira,
       provider: path ? provider : null,
       host_path: path || null,
+      ai_provider: aiProvider || null,
     }
     try {
       onSaved(editing ? await updateProject(project.key, input) : await createProject(input))
@@ -219,6 +232,23 @@ function ProjectForm({ project, onClose, onSaved }: FormProps) {
             value={hostPath}
             onChange={(e) => setHostPath(e.target.value)}
           />
+          <TextField
+            select
+            label="AI provider"
+            value={aiProvider}
+            onChange={(e) => setAiProvider(e.target.value as AiProviderId | '')}
+            helperText="Used for plans and manual test setup. Implement, review and feedback always use GitHub Copilot CLI for now."
+            slotProps={{ select: { displayEmpty: true } }}
+          >
+            <MenuItem value="">
+              Default{defaultProvider ? ` (${defaultProvider.label})` : ''}
+            </MenuItem>
+            {Object.entries(AI_PROVIDER_LABELS).map(([id, label]) => (
+              <MenuItem key={id} value={id}>
+                {label}
+              </MenuItem>
+            ))}
+          </TextField>
           {error && <Alert severity="error">{error}</Alert>}
         </Stack>
         <FolderPicker
@@ -288,7 +318,7 @@ function ProjectDetails({
       </Typography>
       <List dense disablePadding aria-label="Setup checklist">
         {project.status.map((item) => {
-          const to = item.done ? null : settingsLink(project, item)
+          const to = item.done && item.id !== 'ai' ? null : settingsLink(project, item)
           return (
             <ListItem key={item.id} disableGutters>
               <ListItemIcon sx={{ minWidth: 32 }}>
@@ -299,7 +329,7 @@ function ProjectDetails({
                 secondary={
                   to ? (
                     <Link component={RouterLink} to={to}>
-                      Set up
+                      {item.done ? 'Change' : 'Set up'}
                     </Link>
                   ) : item.done ? undefined : (
                     'Edit the project to fix this'

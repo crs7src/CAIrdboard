@@ -34,6 +34,7 @@ import {
   type TestConfig,
   type TestRun,
 } from '../../api'
+import ProviderChip from '../../shared/ProviderChip'
 import StepButton from '../cards/StepButton'
 
 export const TEST_POLL_MS = 3000
@@ -186,6 +187,7 @@ export default function Test({
             size="small"
             color={run?.state === 'running' ? 'success' : run?.state === 'failed' ? 'error' : 'default'}
           />
+          <ProviderChip provider={run?.provider} />
           {config && <Chip label="saved settings" size="small" variant="outlined" />}
           {approved && <Chip label="approved" size="small" color="success" />}
           <Box sx={{ flexGrow: 1 }} />

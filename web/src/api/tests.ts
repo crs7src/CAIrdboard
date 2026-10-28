@@ -3,6 +3,8 @@ import { failure } from './client'
 export type TestState = 'preparing' | 'running' | 'stopped' | 'failed'
 
 export interface TestRun {
+  // The AI that ran it; null when none was used.
+  provider?: string | null
   card_key: string
   version: number
   review_version: number | null

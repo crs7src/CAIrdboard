@@ -55,6 +55,7 @@ export const plan = (over: Record<string, unknown> = {}) => ({
   feedback: null,
   plan: '## Steps\n\n1. Do the thing',
   error: null,
+  provider: 'copilot',
   created_at: 't',
   updated_at: 't',
   ...over,

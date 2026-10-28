@@ -46,6 +46,7 @@ def test_lists_providers_with_copilot_configured(client):
     assert set(providers) == {"copilot", "anthropic", "gemini"}
     assert providers["copilot"]["configured"] is True
     assert providers["copilot"]["supports_agent"] is True
+    assert [p["is_default"] for p in providers.values()] == [True, False, False]
     assert providers["anthropic"]["configured"] is False
     assert providers["anthropic"]["model"]
 

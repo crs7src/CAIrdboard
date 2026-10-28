@@ -31,6 +31,7 @@ import {
   type CardDetail as CardDetailData,
   type Plan,
 } from '../../api'
+import ProviderChip from '../../shared/ProviderChip'
 
 export const POLL_MS = 2000
 
@@ -207,6 +208,7 @@ export default function CardDetail() {
                 Plan
               </Typography>
               {plan && <Chip label={`v${plan.version}`} size="small" />}
+              <ProviderChip provider={plan?.provider} />
               <Chip
                 label={plan ? plan.state : 'not started'}
                 size="small"
