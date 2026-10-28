@@ -31,7 +31,7 @@ const plan = (over = {}) => ({
 })
 
 /** Stateful in-browser fake of the plan endpoints; never touches Jira or the AI. */
-async function mockBackend(page: Page, cardOver = {}) {
+async function mockBackend(page: Page, cardOver = {}, implOver = {}) {
   let current: ReturnType<typeof plan> | null = null
   const posts: unknown[] = []
   let impl: Record<string, unknown> | null = null
@@ -113,6 +113,7 @@ async function mockBackend(page: Page, cardOver = {}) {
     error: null,
     created_at: 't',
     updated_at: 't',
+    ...implOver,
     ...over,
   })
   await page.route('**/api/cards/AB-1/implementation', (route) => {
@@ -189,6 +190,34 @@ test('approved plan can be implemented on a new branch with a review report', as
   await expect(page.getByText('AB-1_add_dark_mode')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Review against the plan' })).toBeVisible()
   await expect(page.getByText('completed', { exact: true })).toBeVisible()
+})
+
+test('a project on Anthropic implements the plan through the API provider', async ({ page }) => {
+  await mockBackend(page, {}, { provider: 'anthropic' })
+  await page.goto('/cards/AB-1')
+  await page.getByRole('button', { name: 'Run plan', exact: true }).click()
+  await page.getByRole('button', { name: 'Review plan', exact: true }).click()
+  await page.getByRole('button', { name: 'Approve', exact: true }).click()
+  await page.getByRole('button', { name: 'Start implementation', exact: true }).click()
+  await page.getByRole('button', { name: /^Implementation/ }).click()
+  await expect(page.getByText('AB-1: step 2 - add tests')).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText('via Anthropic')).toBeVisible()
+})
+
+test('starting an implementation without an Anthropic key shows the 503 detail', async ({ page }) => {
+  await mockBackend(page)
+  await page.route('**/api/cards/AB-1/implementation', (route) =>
+    route.request().method() === 'POST'
+      ? route.fulfill({ status: 503, json: { detail: 'Anthropic has no API key. Add one in Settings > AI providers.' } })
+      : route.fulfill({ status: 404, json: { detail: 'No implementation exists' } }),
+  )
+  await page.goto('/cards/AB-1')
+  await page.getByRole('button', { name: 'Run plan', exact: true }).click()
+  await page.getByRole('button', { name: 'Review plan', exact: true }).click()
+  await page.getByRole('button', { name: 'Approve', exact: true }).click()
+  await page.getByRole('button', { name: 'Start implementation', exact: true }).click()
+  await page.getByRole('button', { name: /^Implementation/ }).click()
+  await expect(page.getByText('Anthropic has no API key')).toBeVisible()
 })
 
 test('reject a plan and regenerate it with feedback', async ({ page }) => {

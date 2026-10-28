@@ -4,6 +4,8 @@ from typing import Annotated
 from fastapi import Depends, HTTPException
 
 from app.ai import (
+    DEFAULT_PROVIDER,
+    PROVIDERS,
     AiProvider,
     ProviderNotConfigured,
     make_provider,
@@ -86,5 +88,23 @@ def provider_for(settings: Settings, runner, project: str) -> AiProvider:
         provider_id = resolve_provider_id(config, project)
         model = model_for(config, provider_id)
         return make_provider(provider_id, settings, runner, model)
+    except ProviderNotConfigured as e:
+        raise HTTPException(503, str(e)) from e
+
+
+def agent_provider_for(settings: Settings, runner, project: str) -> AiProvider:
+    """The provider for the agent stages (implement, review, feedback).
+
+    A provider that cannot edit files (Gemini) hands them to Copilot instead; one
+    that can (Anthropic) needs its API key, else 503.
+    """
+    config = load_ai_config(settings.ai_config_file)
+    provider_id = resolve_provider_id(config, project)
+    if not PROVIDERS[provider_id].supports_agent:
+        provider_id = DEFAULT_PROVIDER
+    try:
+        return make_provider(
+            provider_id, settings, runner, model_for(config, provider_id)
+        )
     except ProviderNotConfigured as e:
         raise HTTPException(503, str(e)) from e

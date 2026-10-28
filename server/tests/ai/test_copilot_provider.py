@@ -22,11 +22,13 @@ async def test_copilot_builds_the_same_argv_as_the_stages():
     await provider.run("P", "/repo", 5, "plan")
     await provider.run("P", "/repo", 5, "test")
     await provider.run("P", "/repo", 5, "summary")
+    await provider.run("P", "/repo", 5, "agent")
     argvs = [c[0] for c in runner.calls]
     assert argvs == [
         planner.build_args("copilot", "P"),
         tester.build_args("copilot", "P"),
         implementer.summary_args("copilot", "P"),
+        implementer.build_args("copilot", "P"),
     ]
     assert runner.calls[0][1:] == ("/repo", 5)
 
@@ -34,7 +36,8 @@ async def test_copilot_builds_the_same_argv_as_the_stages():
 def test_registry_and_default_resolution():
     assert set(PROVIDERS) == {"copilot", "anthropic", "gemini"}
     assert PROVIDERS["copilot"].supports_agent
-    assert not PROVIDERS["anthropic"].supports_agent
+    assert PROVIDERS["anthropic"].supports_agent
+    assert not PROVIDERS["gemini"].supports_agent
     assert resolve_provider_id(AiConfig(), "ABC") == "copilot"
 
 

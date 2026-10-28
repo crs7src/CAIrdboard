@@ -13,6 +13,7 @@ from app.deps import (
     _implementation_states,
     _repo_for_key,
     _valid_key,
+    agent_provider_for,
     provider_for,
 )
 from app.integrations import jira
@@ -54,6 +55,7 @@ async def start_implementation(
             "Another implementation is running in this repo. Wait for it to finish.",
         )
 
+    provider = agent_provider_for(settings, runner, card.project)
     try:
         summary_provider = provider_for(settings, runner, card.project)
     except HTTPException:
@@ -70,6 +72,7 @@ async def start_implementation(
         card,
         plan.plan,
         repo,
+        provider,
         summary_provider,
     )
     return run
@@ -83,6 +86,7 @@ async def _implement_then_review(
     card: jira.Card,
     plan_text: str,
     repo: str,
+    provider: object = None,
     summary_provider: object = None,
 ) -> None:
     await implementer.run_implementation(
@@ -95,6 +99,7 @@ async def _implement_then_review(
         settings.implement_timeout_seconds,
         runner,
         summary_provider,
+        provider,
     )
     await _auto_review(settings, runner, run.card_key, run.version, store)
 

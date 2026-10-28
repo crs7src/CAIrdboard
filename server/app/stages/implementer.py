@@ -59,7 +59,6 @@ class Implementation(BaseModel):
     notes: list[str] = []
     report: str | None = None
     error: str | None = None
-    # Agent stages edit and commit, so they always run on the Copilot CLI for now.
     provider: str = "copilot"
     created_at: str
     updated_at: str
@@ -315,6 +314,15 @@ def build_args(command: str, prompt: str) -> list[str]:
     ]
 
 
+async def run_agent(
+    runner, command: str, provider, prompt: str, repo: str, timeout, build=None
+):
+    """Run an agent stage: on the given provider, else on the Copilot CLI directly."""
+    if provider is not None:
+        return await provider.run(prompt, repo, timeout, "agent")
+    return await runner((build or build_args)(command, prompt), repo, timeout)
+
+
 async def run_implementation(
     store: ImplementationStore,
     run: Implementation,
@@ -325,6 +333,7 @@ async def run_implementation(
     timeout: float,
     runner=run_command,
     summary_provider=None,
+    agent_provider=None,
 ) -> None:
     """Prepare the branch, run the AI, and record the outcome. Never raises."""
     try:
@@ -333,10 +342,12 @@ async def run_implementation(
             runner, command, repo, card, plan_text, run, summary_provider
         )
         run.stage = "implementing"
+        if agent_provider is not None:
+            run.provider = agent_provider.id
         store.save(run)
 
         prompt = build_prompt(card, plan_text, run.branch or "", run.base_commit, skill)
-        result = await runner(build_args(command, prompt), repo, timeout)
+        result = await run_agent(runner, command, agent_provider, prompt, repo, timeout)
         run.commits = await list_commits(runner, repo, run.base_commit)
 
         current = await _git(runner, repo, "rev-parse", "--abbrev-ref", "HEAD")

@@ -4,7 +4,7 @@ import httpx
 
 from app.ai import Mode
 from app.ai.errors import ProviderError, request_json
-from app.ai.tools import MAX_ITERATIONS, TOOL_SPECS, ToolBox
+from app.ai.tools import MAX_AGENT_ITERATIONS, MAX_ITERATIONS, ToolBox, tool_specs
 from app.stages.planner import CommandResult, CommandTimeout
 
 BASE_URL = "https://api.anthropic.com/v1"
@@ -41,11 +41,17 @@ class AnthropicProvider:
     label = LABEL
 
     def __init__(
-        self, api_key: str, model: str, *, max_iterations: int = MAX_ITERATIONS
+        self,
+        api_key: str,
+        model: str,
+        *,
+        max_iterations: int = MAX_ITERATIONS,
+        max_agent_iterations: int = MAX_AGENT_ITERATIONS,
     ):
         self.api_key = api_key
         self.model = model
         self.max_iterations = max_iterations
+        self.max_agent_iterations = max_agent_iterations
 
     async def run(
         self, prompt: str, cwd: str, timeout: float, mode: Mode = "plan"
@@ -62,10 +68,12 @@ class AnthropicProvider:
         return CommandResult(0, text, "")
 
     async def _complete(self, prompt: str, cwd: str, mode: Mode) -> str:
-        toolbox = ToolBox(cwd) if mode != "summary" else None
+        agent = mode == "agent"
+        toolbox = ToolBox(cwd, agent=agent) if mode != "summary" else None
+        limit = self.max_agent_iterations if agent else self.max_iterations
         messages: list[dict] = [{"role": "user", "content": prompt}]
         async with httpx.AsyncClient(timeout=httpx.Timeout(600)) as client:
-            for _ in range(self.max_iterations):
+            for _ in range(limit):
                 body = {
                     "model": self.model,
                     "max_tokens": MAX_TOKENS,
@@ -78,7 +86,7 @@ class AnthropicProvider:
                             "description": t["description"],
                             "input_schema": t["parameters"],
                         }
-                        for t in TOOL_SPECS
+                        for t in tool_specs(agent)
                     ]
                 data = await request_json(
                     client,
@@ -96,7 +104,10 @@ class AnthropicProvider:
                         {
                             "type": "tool_result",
                             "tool_use_id": b.get("id"),
-                            "content": toolbox.call(b.get("name", ""), b.get("input")),
+                            # Tools can block (bash), so keep them off the event loop.
+                            "content": await asyncio.to_thread(
+                                toolbox.call, b.get("name", ""), b.get("input")
+                            ),
                         }
                         for b in blocks
                         if b.get("type") == "tool_use"
@@ -106,9 +117,7 @@ class AnthropicProvider:
                 if data.get("stop_reason") == "max_tokens":
                     raise ProviderError(f"{LABEL} cut its answer off (too long)")
                 return _text(data)
-        raise ProviderError(
-            f"{LABEL} did not finish within {self.max_iterations} tool steps"
-        )
+        raise ProviderError(f"{LABEL} did not finish within {limit} tool steps")
 
 
 def _text(data: dict) -> str:

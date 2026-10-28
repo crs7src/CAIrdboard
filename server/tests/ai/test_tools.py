@@ -221,3 +221,184 @@ async def test_truncated_answer_is_an_error(repo):
     )
     result = await AnthropicProvider("k", "m").run("P", str(repo), 30)
     assert result.returncode == 1 and "cut its answer off" in result.stderr
+
+
+def test_agent_tools_are_off_by_default(repo):
+    box = ToolBox(str(repo))
+    assert box.call("create", {"path": "x.txt", "content": "a"}).startswith("Error")
+    assert not (repo / "x.txt").exists()
+    assert [s["name"] for s in tools.tool_specs()] == ["view", "grep", "glob"]
+    assert [s["name"] for s in tools.tool_specs(True)][-3:] == [
+        "edit",
+        "create",
+        "bash",
+    ]
+
+
+def test_edit_and_create_write_inside_the_repo(repo):
+    box = ToolBox(str(repo), agent=True)
+    assert (
+        box.call("create", {"path": "new/b.txt", "content": "hi"})
+        == "Created new/b.txt"
+    )
+    assert (repo / "new" / "b.txt").read_text() == "hi"
+    assert "already exists" in box.call("create", {"path": "new/b.txt", "content": "x"})
+    assert (
+        box.call(
+            "edit", {"path": "src/a.py", "old_str": "return 1", "new_str": "return 2"}
+        )
+        == "Edited src/a.py"
+    )
+    assert "return 2" in (repo / "src" / "a.py").read_text()
+    assert "exactly once" in box.call(
+        "edit", {"path": "src/a.py", "old_str": "zzz", "new_str": "y"}
+    )
+
+
+def test_write_tools_reject_escapes_and_git_dir(repo, tmp_path):
+    box = ToolBox(str(repo), agent=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "f.txt").write_text("secret")
+    (repo / "link").symlink_to(outside)
+    assert "outside the repo" in box.call(
+        "create", {"path": "../evil.txt", "content": "x"}
+    )
+    assert "outside the repo" in box.call(
+        "create", {"path": "link/evil.txt", "content": "x"}
+    )
+    assert "outside the repo" in box.call(
+        "edit", {"path": "link/f.txt", "old_str": "secret", "new_str": "x"}
+    )
+    assert "outside the repo" in box.call(
+        "create", {"path": str(tmp_path / "abs.txt"), "content": "x"}
+    )
+    assert "cannot be changed" in box.call(
+        "edit", {"path": ".git/config", "old_str": "hello", "new_str": "x"}
+    )
+    assert not (outside / "evil.txt").exists()
+    assert (outside / "f.txt").read_text() == "secret"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "git push origin main",
+        "git -C . push",
+        "git branch -D x",
+        "git rebase main",
+        "git reset --hard HEAD~1",
+        "git clean -fd",
+        "rm -rf build",
+        "rm -fr build",
+        "rm -r -f build",
+        "rm --recursive --force build",
+        "sudo ls",
+        "ls && git push",
+        "echo hi | sudo tee x",
+        "FOO=1 git push",
+        "/usr/bin/git push",
+        "bash -c 'git push'",
+        "eval 'git push'",
+        "echo $(git push)",
+        "echo `git push`",
+        "ls; rm -rf x",
+    ],
+)
+def test_bash_deny_list(repo, command):
+    out = ToolBox(str(repo), agent=True).call("bash", {"command": command})
+    assert out.startswith("Error: Refused")
+
+
+def test_bash_runs_allowed_commands_in_the_repo(repo):
+    box = ToolBox(str(repo), agent=True)
+    out = box.call("bash", {"command": "pwd && git --version && rm x 2>&1; echo hi"})
+    assert out.startswith("exit code 0")
+    assert str(repo.resolve()) in out
+    assert "git version" in out
+    assert "exit code 1" in box.call("bash", {"command": "exit 1"})
+
+
+def test_bash_times_out_and_caps_output(repo, monkeypatch):
+    box = ToolBox(str(repo), agent=True)
+    monkeypatch.setattr(tools, "BASH_TIMEOUT", 0.2)
+    assert "timed out" in box.call("bash", {"command": "sleep 5"})
+    monkeypatch.setattr(tools, "BASH_TIMEOUT", 30)
+    out = box.call("bash", {"command": "yes x | head -c 100000"})
+    assert out.endswith("[output truncated]")
+
+
+def _tool_turn(*calls):
+    return httpx.Response(
+        200,
+        json={
+            "stop_reason": "tool_use",
+            "content": [
+                {"type": "tool_use", "id": f"t{i}", "name": n, "input": a}
+                for i, (n, a) in enumerate(calls)
+            ],
+        },
+    )
+
+
+@respx.mock
+async def test_agent_mode_offers_write_tools_and_runs_several_calls_per_turn(repo):
+    route = respx.post(ANTHROPIC).mock(
+        side_effect=[
+            _tool_turn(
+                ("create", {"path": "one.txt", "content": "1"}),
+                ("edit", {"path": "README.md", "old_str": "Title", "new_str": "New"}),
+                ("bash", {"command": "git --version"}),
+            ),
+            httpx.Response(
+                200,
+                json={
+                    "stop_reason": "end_turn",
+                    "content": [{"type": "text", "text": "done"}],
+                },
+            ),
+        ]
+    )
+    result = await AnthropicProvider("k", "m").run("P", str(repo), 30, "agent")
+    assert result.returncode == 0 and result.stdout == "done"
+    first = json.loads(route.calls[0].request.content)
+    assert [t["name"] for t in first["tools"]] == [
+        "view",
+        "grep",
+        "glob",
+        "edit",
+        "create",
+        "bash",
+    ]
+    results = json.loads(route.calls[1].request.content)["messages"][-1]["content"]
+    assert [r["tool_use_id"] for r in results] == ["t0", "t1", "t2"]
+    assert "git version" in results[2]["content"]
+    assert (repo / "one.txt").read_text() == "1"
+    assert (repo / "README.md").read_text() == "# New\n"
+
+
+@respx.mock
+async def test_plan_mode_stays_read_only(repo):
+    route = respx.post(ANTHROPIC).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "stop_reason": "end_turn",
+                "content": [{"type": "text", "text": "x"}],
+            },
+        )
+    )
+    await AnthropicProvider("k", "m").run("P", str(repo), 30, "plan")
+    names = [t["name"] for t in json.loads(route.calls[0].request.content)["tools"]]
+    assert names == ["view", "grep", "glob"]
+
+
+@respx.mock
+async def test_agent_iteration_cap_is_configurable(repo):
+    route = respx.post(ANTHROPIC).mock(
+        return_value=_tool_turn(("glob", {"pattern": "*"}))
+    )
+    provider = AnthropicProvider("k", "m", max_iterations=2, max_agent_iterations=5)
+    result = await provider.run("P", str(repo), 30, "agent")
+    assert route.call_count == 5
+    assert result.returncode == 1 and "5 tool steps" in result.stderr

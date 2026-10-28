@@ -20,5 +20,6 @@ class CopilotProvider:
             "plan": planner.build_args,
             "test": tester.build_args,
             "summary": implementer.summary_args,
+            "agent": implementer.build_args,
         }[mode]
         return await self.runner(build(self.command, prompt), cwd, timeout)
