@@ -5,10 +5,11 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from app import skills
-from app.db import RunStore
-from app.jira import Card
-from app.planner import (
+from app.core import skills
+from app.core.db import RunStore
+from app.core.skills import SkillError
+from app.integrations.jira import Card
+from app.stages.planner import (
     READ_ONLY_TOOLS,
     CommandNotFound,
     CommandTimeout,
@@ -17,7 +18,6 @@ from app.planner import (
     needs_rework,
     run_command,
 )
-from app.skills import SkillError
 
 ImplState = Literal["running", "completed", "failed"]
 ImplStage = Literal["preparing", "implementing", "done"]

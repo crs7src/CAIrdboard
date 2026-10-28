@@ -4,18 +4,11 @@ from typing import Annotated
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
-from app import (
-    feedback,
-    implementer,
-    planner,
-    reviewer,
-    tester,
-)
-from app.ai_config import load_ai_config
-from app.config import (
+from app.core.ai_config import load_ai_config
+from app.core.config import (
     Settings,
 )
-from app.db import Approvals
+from app.core.db import Approvals
 from app.deps import (
     RunnerDep,
     SettingsDep,
@@ -27,6 +20,7 @@ from app.deps import (
 )
 from app.routes.cards import _load_card
 from app.routes.feedback import _check_feedback_idle, _start_feedback
+from app.stages import feedback, implementer, planner, reviewer, tester
 
 router = APIRouter()
 

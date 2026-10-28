@@ -15,9 +15,9 @@ from test_implementation import (
     sh,
 )
 
-from app import implementer, reviewer
 from app.main import app, get_runner
-from app.planner import CommandResult, run_command
+from app.stages import implementer, reviewer
+from app.stages.planner import CommandResult, run_command
 
 BRANCH = "AB-1_add_dark_mode"
 

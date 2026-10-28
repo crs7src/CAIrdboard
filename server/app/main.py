@@ -2,10 +2,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app import tester
-from app.config import get_settings
+from app.core.config import get_settings
+from app.core.legacy_import import import_legacy_files
 from app.deps import _test_store, get_runner
-from app.legacy_import import import_legacy_files
 from app.routes import (
     cards,
     changes,
@@ -22,6 +21,7 @@ from app.routes import (
     settings,
     tests,
 )
+from app.stages import tester
 
 __all__ = ["app", "get_runner"]
 

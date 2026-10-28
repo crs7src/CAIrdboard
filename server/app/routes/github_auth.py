@@ -1,11 +1,9 @@
 from fastapi import APIRouter
 
-from app import (
-    github,
-)
 from app.deps import (
     SettingsDep,
 )
+from app.integrations import github
 from app.routes.host_credentials import (
     HostCredentialsUpdate,
     _host_status,

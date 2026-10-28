@@ -1,16 +1,10 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, field_validator
 
-from app import (
-    hosting,
-)
-from app.config import (
-    GITHUB_FIELDS,
-    GITLAB_FIELDS,
-    Settings,
-    save_credentials,
-)
-from app.remotes import HostError
+from app.auth.credentials import GITHUB_FIELDS, GITLAB_FIELDS, save_credentials
+from app.core.config import Settings
+from app.integrations import hosting
+from app.integrations.remotes import HostError
 
 router = APIRouter()
 

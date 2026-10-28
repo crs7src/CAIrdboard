@@ -6,10 +6,11 @@ import pytest
 import respx
 from fastapi.testclient import TestClient
 
-from app.ai_config import AiConfig, save_ai_config
-from app.config import GITLAB_FIELDS, get_settings, read_saved_credentials
+from app.auth.credentials import GITLAB_FIELDS, read_saved_credentials
+from app.core.ai_config import AiConfig, save_ai_config
+from app.core.config import get_settings
+from app.integrations.remotes import parse_remote
 from app.main import app
-from app.remotes import parse_remote
 
 URL = "https://git.example.com"
 TOKEN = "glpat-secret"

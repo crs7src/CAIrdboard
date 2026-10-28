@@ -3,10 +3,8 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app import (
-    skills,
-)
-from app.ai_config import AiConfig, load_ai_config, save_ai_config
+from app.core import skills
+from app.core.ai_config import AiConfig, load_ai_config, save_ai_config
 from app.deps import (
     SettingsDep,
 )

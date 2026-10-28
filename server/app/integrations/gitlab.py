@@ -2,8 +2,8 @@ from urllib.parse import quote
 
 import httpx
 
-from app.config import Settings
-from app.remotes import ChangeRequest, HostError, HostProject
+from app.core.config import Settings
+from app.integrations.remotes import ChangeRequest, HostError, HostProject
 
 
 class GitLabError(HostError):

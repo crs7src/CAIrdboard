@@ -5,8 +5,8 @@ import pytest
 import respx
 from fastapi.testclient import TestClient
 
-from app import github
-from app.ai_config import AiConfig, save_ai_config
+from app.core.ai_config import AiConfig, save_ai_config
+from app.integrations import github
 from app.main import app
 
 API = "https://api.github.com"
@@ -174,7 +174,7 @@ def test_check_errors(env):
 async def test_pull_request_find_and_create(env):
     _, _, cred = env
     configure(cred)
-    from app.config import Settings
+    from app.core.config import Settings
 
     settings = Settings(github_url=API, github_token=TOKEN)
     find = respx.get(f"{API}/repos/me/app/pulls").respond(json=[])
@@ -200,7 +200,7 @@ async def test_pull_request_find_and_create(env):
 
 @respx.mock
 async def test_error_detail_is_surfaced(env):
-    from app.config import Settings
+    from app.core.config import Settings
 
     settings = Settings(github_url=API, github_token=TOKEN)
     respx.post(f"{API}/repos/me/app/pulls").respond(
@@ -216,7 +216,7 @@ async def test_error_detail_is_surfaced(env):
 
 @respx.mock
 async def test_field_errors_without_a_message_are_readable():
-    from app.config import Settings
+    from app.core.config import Settings
 
     settings = Settings(github_url=API, github_token=TOKEN)
     respx.post(f"{API}/repos/me/app/pulls").respond(

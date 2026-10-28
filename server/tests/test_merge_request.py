@@ -16,9 +16,9 @@ from test_implementation import (
 )
 from test_review import BRANCH, make_impl
 
-from app import implementer, merge_request
 from app.main import app, get_runner
-from app.planner import run_command
+from app.stages import implementer, merge_request
+from app.stages.planner import run_command
 
 GL = "https://git.example.com"
 PROJECT = "grp/app"
@@ -45,7 +45,7 @@ def ready(tmp_path, work, approved=True):
     approve_plan(tmp_path)
     impl = make_impl(tmp_path, work)
     if approved:
-        from app.db import Approvals
+        from app.core.db import Approvals
 
         Approvals(db()).approve("AB-1")
     return impl
@@ -97,7 +97,7 @@ def test_an_existing_open_mr_is_reused_after_new_commits(client, env):
     assert client.get("/api/merge-requests").json() == {"AB-1": "outdated"}
     assert client.get("/api/cards/AB-1/merge-request").json()["outdated"] is True
 
-    from app.db import Approvals
+    from app.core.db import Approvals
 
     Approvals(db()).approve("AB-1")
     respx.get(MR_API).respond(json=[CREATED])
@@ -118,7 +118,7 @@ def test_requires_approval_gitlab_and_a_mapping(client, env):
     assert client.post("/api/cards/AB-1/merge-request").status_code == 409
     ready(tmp_path, work, approved=False)
     assert client.post("/api/cards/AB-1/merge-request").status_code == 409
-    from app.db import Approvals
+    from app.core.db import Approvals
 
     Approvals(db()).approve("AB-1")
     client.delete("/api/repo-hosts/AB")

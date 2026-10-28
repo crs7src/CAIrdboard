@@ -1,4 +1,4 @@
-from app.ai_config import AiConfig, load_ai_config, save_ai_config
+from app.core.ai_config import AiConfig, load_ai_config, save_ai_config
 
 
 def test_names_default_empty_and_old_files_load(tmp_path):

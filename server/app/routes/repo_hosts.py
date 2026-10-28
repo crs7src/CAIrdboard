@@ -1,19 +1,16 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, field_validator, model_validator
 
-from app import (
-    hosting,
-    remotes,
-)
-from app.ai_config import load_ai_config
-from app.config import (
+from app.core.ai_config import load_ai_config
+from app.core.config import (
     Settings,
 )
 from app.deps import (
     SettingsDep,
     _db,
 )
-from app.remotes import HostError, HostProject
+from app.integrations import hosting, remotes
+from app.integrations.remotes import HostError, HostProject
 from app.routes.tests import _project_repo
 
 router = APIRouter()

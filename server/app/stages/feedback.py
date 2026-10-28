@@ -4,9 +4,11 @@ from typing import Literal
 
 from pydantic import BaseModel, field_validator, model_validator
 
-from app import skills
-from app.db import RunStore, check_key
-from app.implementer import (
+from app.core import skills
+from app.core.db import RunStore, check_key
+from app.core.skills import SkillError
+from app.integrations.jira import Card
+from app.stages.implementer import (
     ACTIVE_REPOS,
     DENIED_TOOLS,
     Commit,
@@ -15,8 +17,7 @@ from app.implementer import (
     _git,
     list_commits,
 )
-from app.jira import Card
-from app.planner import (
+from app.stages.planner import (
     CommandNotFound,
     CommandTimeout,
     format_comments,
@@ -24,7 +25,6 @@ from app.planner import (
     needs_rework,
     run_command,
 )
-from app.skills import SkillError
 
 CommentStatus = Literal["pending", "resolved"]
 FeedbackState = Literal["running", "done", "failed"]

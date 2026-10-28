@@ -1,9 +1,5 @@
 from fastapi import APIRouter, HTTPException
 
-from app import (
-    changes,
-    implementer,
-)
 from app.deps import (
     RunnerDep,
     SettingsDep,
@@ -11,6 +7,7 @@ from app.deps import (
     _repo_for_key,
     _valid_key,
 )
+from app.stages import changes, implementer
 
 router = APIRouter()
 

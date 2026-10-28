@@ -6,11 +6,11 @@ import respx
 from dbutil import db
 from fastapi.testclient import TestClient
 
-from app import implementer, planner
-from app.ai_config import AiConfig, save_ai_config
-from app.jira import Card
+from app.core.ai_config import AiConfig, save_ai_config
+from app.integrations.jira import Card
 from app.main import app, get_runner
-from app.planner import CommandResult, run_command
+from app.stages import implementer, planner
+from app.stages.planner import CommandResult, run_command
 
 BASE = "https://example.atlassian.net"
 SUMMARY_MARKER = "suitable for a git branch name"
@@ -140,7 +140,7 @@ def test_args_allow_tools_but_deny_destructive_and_forbid_questions():
 
 
 def test_prompt_has_skill_plan_branch_and_comments():
-    from app.jira import Comment
+    from app.integrations.jira import Comment
 
     card = make_card(comments=[Comment(author="Ann", created="d", body="Fix label")])
     prompt = implementer.build_prompt(card, "THE PLAN", "AB-1_x", "abc123")
@@ -477,7 +477,7 @@ def set_auto_review(tmp_path, work, value):
 
 @respx.mock
 def test_completed_implementation_starts_a_review(client, env):
-    from app import reviewer
+    from app.stages import reviewer
 
     tmp_path, _ = env
     mock_jira()
@@ -500,7 +500,7 @@ def test_completed_implementation_starts_a_review(client, env):
 
 @respx.mock
 def test_no_review_when_auto_review_is_off(client, env):
-    from app import reviewer
+    from app.stages import reviewer
 
     tmp_path, work = env
     set_auto_review(tmp_path, work, False)
@@ -513,7 +513,7 @@ def test_no_review_when_auto_review_is_off(client, env):
 
 @respx.mock
 def test_no_review_after_a_failed_implementation(client, env, ai):
-    from app import reviewer
+    from app.stages import reviewer
 
     tmp_path, _ = env
     ai.returncode = 1
@@ -530,8 +530,8 @@ def test_refused_auto_review_keeps_the_implementation_completed(
 ):
     from fastapi import HTTPException
 
-    from app import reviewer
     from app.routes import implementations
+    from app.stages import reviewer
 
     tmp_path, _ = env
 

@@ -4,10 +4,11 @@ import respx
 from dbutil import db
 from fastapi.testclient import TestClient
 
-from app import hosting, tester
-from app.ai_config import AiConfig, load_ai_config, save_ai_config
-from app.config import Settings, get_settings
+from app.core.ai_config import AiConfig, load_ai_config, save_ai_config
+from app.core.config import Settings, get_settings
+from app.integrations import hosting
 from app.main import app
+from app.stages import tester
 
 API = "https://api.github.com"
 JIRA = "https://example.atlassian.net"
@@ -289,7 +290,7 @@ def test_project_detail_has_only_its_cards(client, repo):
 
 @respx.mock
 def test_project_cards_include_step_states(client, repo):
-    from app import planner
+    from app.stages import planner
 
     create(client, repo)
     mock_sources()

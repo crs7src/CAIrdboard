@@ -1,11 +1,9 @@
 from fastapi import APIRouter
 
-from app import (
-    gitlab,
-)
 from app.deps import (
     SettingsDep,
 )
+from app.integrations import gitlab
 from app.routes.host_credentials import (
     HostCredentialsUpdate,
     _host_status,

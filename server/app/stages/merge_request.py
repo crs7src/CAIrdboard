@@ -3,12 +3,12 @@ from typing import Literal
 
 from pydantic import AliasChoices, BaseModel, Field
 
-from app import hosting
-from app.config import Settings
-from app.db import RunStore
-from app.implementer import Implementation, ImplementationError, _git
-from app.jira import Card
-from app.remotes import HostError
+from app.core.config import Settings
+from app.core.db import RunStore
+from app.integrations import hosting
+from app.integrations.jira import Card
+from app.integrations.remotes import HostError
+from app.stages.implementer import Implementation, ImplementationError, _git
 
 PUSH_TIMEOUT = 300
 

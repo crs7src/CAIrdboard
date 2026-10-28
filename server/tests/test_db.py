@@ -4,10 +4,10 @@ import threading
 import pytest
 from dbutil import db
 
-from app import feedback, implementer, planner, reviewer, tester
-from app.config import Settings
-from app.db import Approvals, Database
-from app.legacy_import import import_legacy_files
+from app.core.config import Settings
+from app.core.db import Approvals, Database
+from app.core.legacy_import import import_legacy_files
+from app.stages import feedback, implementer, planner, reviewer, tester
 
 
 def impl_of(version=1):

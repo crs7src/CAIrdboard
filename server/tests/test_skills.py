@@ -1,8 +1,9 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app import feedback, implementer, planner, reviewer, skills, tester
+from app.core import skills
 from app.main import app
+from app.stages import feedback, implementer, planner, reviewer, tester
 
 PLANNER_OK = "intro\n## Mode: default\nA\n## Mode: reopened\nB\n"
 

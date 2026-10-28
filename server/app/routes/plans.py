@@ -3,11 +3,8 @@ from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, field_validator
 
-from app import (
-    planner,
-)
-from app.ai_config import load_ai_config
-from app.config import (
+from app.core.ai_config import load_ai_config
+from app.core.config import (
     Settings,
 )
 from app.deps import (
@@ -18,6 +15,7 @@ from app.deps import (
     _valid_key,
 )
 from app.routes.cards import _load_card
+from app.stages import planner
 
 router = APIRouter()
 

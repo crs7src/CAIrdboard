@@ -4,10 +4,10 @@ from urllib.parse import quote, urlsplit
 
 import httpx
 
-from app.config import Settings
-from app.db import Database
-from app.jira import Card, CardNotFound, Comment
-from app.remotes import ChangeRequest, HostError, HostProject
+from app.core.config import Settings
+from app.core.db import Database
+from app.integrations.jira import Card, CardNotFound, Comment
+from app.integrations.remotes import ChangeRequest, HostError, HostProject
 
 API_VERSION = "2022-11-28"
 

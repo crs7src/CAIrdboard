@@ -7,11 +7,11 @@ from dbutil import db
 from fastapi.testclient import TestClient
 from test_plans import FakeRunner
 
-from app import github
-from app.ai_config import AiConfig, load_ai_config, save_ai_config
-from app.config import Settings, get_settings
+from app.core.ai_config import AiConfig, load_ai_config, save_ai_config
+from app.core.config import Settings, get_settings
+from app.integrations import github
 from app.main import app, get_runner
-from app.merge_request import closing_line
+from app.stages.merge_request import closing_line
 
 API = "https://api.github.com"
 JIRA = "https://example.atlassian.net"

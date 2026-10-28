@@ -2,7 +2,7 @@ import re
 
 from pydantic import BaseModel
 
-from app.implementer import Implementation, _git
+from app.stages.implementer import Implementation, _git
 
 SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
 

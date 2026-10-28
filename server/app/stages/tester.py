@@ -12,17 +12,18 @@ from urllib.parse import urlparse
 import httpx
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app import skills
-from app.db import Database, RunStore, check_key
-from app.implementer import (
+from app.core import skills
+from app.core.db import Database, RunStore, check_key
+from app.core.skills import SkillError
+from app.integrations.jira import Card
+from app.stages.implementer import (
     ACTIVE_REPOS,
     DENIED_TOOLS,
     Implementation,
     ImplementationError,
     _git,
 )
-from app.jira import Card
-from app.planner import (
+from app.stages.planner import (
     CommandNotFound,
     CommandTimeout,
     format_comments,
@@ -30,7 +31,6 @@ from app.planner import (
     needs_rework,
     run_command,
 )
-from app.skills import SkillError
 
 # preparing: the AI is working out how to run the app, or the app is starting;
 # running: the app is up; stopped: it was stopped or exited; failed: it never came up.

@@ -4,7 +4,7 @@ from typing import Literal
 import httpx
 from pydantic import BaseModel
 
-from app.config import Settings
+from app.core.config import Settings
 
 ASSIGNED_JQL = (
     "assignee = currentUser() AND resolution = Unresolved ORDER BY updated DESC"

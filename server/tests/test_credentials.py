@@ -7,7 +7,8 @@ import pytest
 import respx
 from fastapi.testclient import TestClient
 
-from app.config import get_settings, read_saved_credentials, save_credentials
+from app.auth.credentials import read_saved_credentials, save_credentials
+from app.core.config import get_settings
 from app.main import app
 
 BASE = "https://example.atlassian.net"

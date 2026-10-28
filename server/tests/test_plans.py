@@ -4,10 +4,10 @@ import respx
 from dbutil import db
 from fastapi.testclient import TestClient
 
-from app import planner
-from app.ai_config import AiConfig, load_ai_config, save_ai_config
-from app.jira import adf_to_text
+from app.core.ai_config import AiConfig, load_ai_config, save_ai_config
+from app.integrations.jira import adf_to_text
 from app.main import app, get_runner
+from app.stages import planner
 
 BASE = "https://example.atlassian.net"
 REPO_KEY = "AB"
@@ -183,7 +183,7 @@ def test_ai_config_endpoints_roundtrip(client, env):
 
 
 def _card(**kw):
-    from app.jira import Card
+    from app.integrations.jira import Card
 
     base = {
         "key": "AB-1",
@@ -215,7 +215,7 @@ def test_prompt_includes_card_and_feedback():
 
 
 def _comments():
-    from app.jira import Comment
+    from app.integrations.jira import Comment
 
     return [
         Comment(author="Ann", created="d1", body="Button is the wrong color"),
@@ -264,7 +264,7 @@ def test_previously_reopened_card_in_other_status_uses_rework_mode():
 
 
 def test_rework_prompt_marks_new_comments_and_lists_history():
-    from app.jira import StatusChange
+    from app.integrations.jira import StatusChange
 
     comments = _comments()
     comments[1].after_reopen = True

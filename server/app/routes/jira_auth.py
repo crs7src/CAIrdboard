@@ -1,15 +1,11 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, field_validator
 
-from app import (
-    jira,
-)
-from app.config import (
-    save_credentials,
-)
+from app.auth.credentials import save_credentials
 from app.deps import (
     SettingsDep,
 )
+from app.integrations import jira
 
 router = APIRouter()
 

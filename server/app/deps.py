@@ -3,18 +3,13 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException
 
-from app import (
-    feedback,
-    implementer,
-    planner,
-    tester,
-)
-from app.ai_config import load_ai_config
-from app.config import (
+from app.core.ai_config import load_ai_config
+from app.core.config import (
     Settings,
     get_settings,
 )
-from app.db import CARD_KEY_RE, Database
+from app.core.db import CARD_KEY_RE, Database
+from app.stages import feedback, implementer, planner, tester
 
 
 def _db(settings: Settings) -> Database:

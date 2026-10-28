@@ -5,10 +5,11 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from app import github, hosting, jira, tester
-from app.ai_config import AiConfig
-from app.config import Settings
-from app.db import Database
+from app.core.ai_config import AiConfig
+from app.core.config import Settings
+from app.core.db import Database
+from app.integrations import github, hosting, jira
+from app.stages import tester
 
 JIRA_KEY_RE = re.compile(r"^[A-Z][A-Z0-9]+$")
 

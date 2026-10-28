@@ -2,9 +2,9 @@ import os
 import re
 from pathlib import Path
 
-from app.config import Settings
+from app.core.config import Settings
 
-BUNDLED_DIR = Path(__file__).resolve().parent.parent / "skills"
+BUNDLED_DIR = Path(__file__).resolve().parents[2] / "skills"
 BUNDLED_NAMES = {
     "planner": "card-planner",
     "implementer": "card-implementer",

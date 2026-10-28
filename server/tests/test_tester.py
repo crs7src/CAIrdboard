@@ -18,9 +18,9 @@ from test_implementation import (
 )
 from test_review import make_impl
 
-from app import implementer, reviewer, tester
 from app.main import app, get_runner
-from app.planner import CommandResult, run_command
+from app.stages import implementer, reviewer, tester
+from app.stages.planner import CommandResult, run_command
 
 
 def free_port() -> int:

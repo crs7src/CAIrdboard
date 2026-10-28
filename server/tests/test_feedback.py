@@ -16,9 +16,9 @@ from test_implementation import (
 )
 from test_review import BRANCH, make_impl
 
-from app import feedback, implementer, reviewer
 from app.main import app, get_runner
-from app.planner import CommandResult, run_command
+from app.stages import feedback, implementer, reviewer
+from app.stages.planner import CommandResult, run_command
 
 
 class FakeEditor:
@@ -200,7 +200,7 @@ def test_submit_runs_the_agent_and_resolves_the_comments(client, env, ai):
 def test_feedback_run_starts_a_review_only_when_auto_review_is_on(
     client, env, ai, auto
 ):
-    from app.ai_config import AiConfig, save_ai_config
+    from app.core.ai_config import AiConfig, save_ai_config
 
     tmp_path, work = env
     ready(tmp_path, work)

@@ -3,16 +3,9 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ValidationError, field_validator
 
-from app import (
-    github,
-    hosting,
-    planner,
-    projects,
-    reviewer,
-    tester,
-)
-from app.ai_config import AiConfig, load_ai_config, save_ai_config
-from app.config import (
+from app.core import projects
+from app.core.ai_config import AiConfig, load_ai_config, save_ai_config
+from app.core.config import (
     Settings,
 )
 from app.deps import (
@@ -22,8 +15,10 @@ from app.deps import (
     _states,
     _test_store,
 )
+from app.integrations import github, hosting
 from app.routes.cards import _load_cards
 from app.routes.repo_hosts import RepoHostBody
+from app.stages import planner, reviewer, tester
 
 router = APIRouter()
 

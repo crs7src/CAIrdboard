@@ -3,13 +3,8 @@ from collections.abc import Awaitable
 
 from fastapi import APIRouter, HTTPException, Response
 
-from app import (
-    github,
-    jira,
-    remotes,
-)
-from app.ai_config import load_ai_config, save_ai_config
-from app.config import (
+from app.core.ai_config import load_ai_config, save_ai_config
+from app.core.config import (
     Settings,
 )
 from app.deps import (
@@ -17,7 +12,8 @@ from app.deps import (
     _db,
     _valid_key,
 )
-from app.remotes import HostError
+from app.integrations import github, jira, remotes
+from app.integrations.remotes import HostError
 
 router = APIRouter()
 

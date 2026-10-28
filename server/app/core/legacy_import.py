@@ -9,9 +9,9 @@ from pathlib import Path
 
 from pydantic import BaseModel, ValidationError
 
-from app import feedback, implementer, planner, reviewer, tester
-from app.config import Settings
-from app.db import CARD_KEY_RE, Database, put_run
+from app.core.config import Settings
+from app.core.db import CARD_KEY_RE, Database, put_run
+from app.stages import feedback, implementer, planner, reviewer, tester
 
 
 def _json_files(folder: Path) -> list[Path]:

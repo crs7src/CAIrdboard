@@ -2,15 +2,8 @@ import logging
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
-from app import (
-    feedback,
-    implementer,
-    jira,
-    planner,
-    reviewer,
-)
-from app.ai_config import load_ai_config
-from app.config import (
+from app.core.ai_config import load_ai_config
+from app.core.config import (
     Settings,
 )
 from app.deps import (
@@ -21,8 +14,10 @@ from app.deps import (
     _repo_for_key,
     _valid_key,
 )
+from app.integrations import jira
 from app.routes.cards import _load_card
 from app.routes.reviews import _prepare_review
+from app.stages import feedback, implementer, planner, reviewer
 
 router = APIRouter()
 

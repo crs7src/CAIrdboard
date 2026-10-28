@@ -4,9 +4,9 @@ from fastapi.testclient import TestClient
 from test_implementation import approve_plan, commit_file, env, repos, sh
 from test_review import make_impl
 
-from app import implementer
 from app.main import app, get_runner
-from app.planner import run_command
+from app.stages import implementer
+from app.stages.planner import run_command
 
 
 async def real_runner(args, cwd, timeout):

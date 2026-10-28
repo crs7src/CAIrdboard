@@ -5,10 +5,10 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel
 
-from app import github, gitlab
-from app.config import Settings
-from app.db import Database
-from app.remotes import ChangeRequest, HostProject, origin_remote
+from app.core.config import Settings
+from app.core.db import Database
+from app.integrations import github, gitlab
+from app.integrations.remotes import ChangeRequest, HostProject, origin_remote
 
 Provider = Literal["gitlab", "github"]
 PROVIDERS: tuple[Provider, ...] = ("gitlab", "github")

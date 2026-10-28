@@ -6,11 +6,11 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from app import skills
-from app.db import RunStore
-from app.jira import Card
-from app.jira import is_reopened_status as is_reopened
-from app.skills import SkillError
+from app.core import skills
+from app.core.db import RunStore
+from app.core.skills import SkillError
+from app.integrations.jira import Card
+from app.integrations.jira import is_reopened_status as is_reopened
 
 PlanState = Literal["running", "ready", "failed", "approved", "rejected"]
 

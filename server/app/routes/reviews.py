@@ -1,11 +1,6 @@
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
-from app import (
-    implementer,
-    planner,
-    reviewer,
-)
-from app.config import (
+from app.core.config import (
     Settings,
 )
 from app.deps import (
@@ -17,6 +12,7 @@ from app.deps import (
     _valid_key,
 )
 from app.routes.cards import _load_card
+from app.stages import implementer, planner, reviewer
 
 router = APIRouter()
 
