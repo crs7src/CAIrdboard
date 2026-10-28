@@ -71,7 +71,7 @@ PROVIDERS: dict[str, ProviderInfo] = {
         "anthropic",
         "Anthropic",
         "claude-sonnet-4-5",
-        False,
+        True,
         ("claude-sonnet-4-5", "claude-opus-4-1", "claude-haiku-4-5"),
     ),
     "gemini": ProviderInfo(
