@@ -19,12 +19,11 @@ import {
   fetchPlanStates,
   fetchReviewStates,
   fetchTestStates,
-  fetchConfiguredTestProjects,
   fetchTestApprovals,
   fetchMergeRequestStates,
   startMergeRequest,
   type MergeRequestState,
-  startTest,
+  setTestApproval,
   type TestState,
   generatePlan,
   startReview,
@@ -62,13 +61,12 @@ function reviewStep(impl: ImplState | undefined, review: ReviewState | undefined
 function testStep(
   review: ReviewState | undefined,
   test: TestState | undefined,
-  configured: boolean,
   approved: boolean,
 ): StepStatus {
   if (approved || test === 'running') return 'done'
   if (test === 'preparing') return 'running'
   if (test === 'failed') return 'failed'
-  return review === 'clean' && configured ? 'next' : 'blocked'
+  return review === 'clean' ? 'next' : 'blocked'
 }
 
 function mergeRequestStep(mr: MergeRequestState | 'outdated' | undefined, approved: boolean): StepStatus {
@@ -93,7 +91,6 @@ export default function Home() {
   const [plans, setPlans] = useState<Record<string, PlanState>>({})
   const [reviews, setReviews] = useState<Record<string, ReviewState>>({})
   const [tests, setTests] = useState<Record<string, TestState>>({})
-  const [testProjects, setTestProjects] = useState<string[]>([])
   const [approvals, setApprovals] = useState<string[]>([])
   const [mrs, setMrs] = useState<Record<string, MergeRequestState | 'outdated'>>({})
   const [impls, setImpls] = useState<Record<string, ImplState>>({})
@@ -145,13 +142,11 @@ export default function Home() {
       setCards(list.cards)
       setWarning(list.warning)
       // Plan info only decorates the list, so failures here are not fatal.
-      const [cfg, tp] = await Promise.all([
+      const [cfg] = await Promise.all([
         fetchAiConfig().catch(() => null),
-        fetchConfiguredTestProjects().catch(() => []),
         refreshStates(),
       ])
       setConfig(cfg)
-      setTestProjects(tp)
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -261,11 +256,12 @@ export default function Home() {
             />
             <StepButton
               label="Test"
-              status={testStep(reviews[card.key], tests[card.key], testProjects.includes(card.project), approvals.includes(card.key))}
+              check
+              status={testStep(reviews[card.key], tests[card.key], approvals.includes(card.key))}
               onRun={() =>
                 run(
-                  () => startTest(card.key),
-                  () => setTests((t) => ({ ...t, [card.key]: 'preparing' })),
+                  () => setTestApproval(card.key, true),
+                  () => setApprovals((a) => [...a, card.key]),
                 )
               }
             />

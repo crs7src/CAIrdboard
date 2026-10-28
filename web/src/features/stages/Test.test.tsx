@@ -186,11 +186,17 @@ test('Approve toggles the approval, which the server may later withdraw', async 
   expect(methods).toEqual(['PUT', 'DELETE'])
 })
 
-test('there is nothing to approve before a test has run', async () => {
-  mockApi({ '/api/cards/AB-1/test': NONE })
+test('Approve is available before a test has run', async () => {
+  mockApi({
+    '/api/cards/AB-1/test': NONE,
+    '/api/cards/AB-1/test/approval': { body: { approved: false, approved_at: null } },
+    'PUT /api/cards/AB-1/test/approval': { body: { approved: true, approved_at: 'now' } },
+  })
   render(<Test cardKey="AB-1" />, { wrapper: MemoryRouter })
-  await screen.findByRole('button', { name: HEADER })
-  expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument()
+  const toggle = await screen.findByRole('button', { name: 'Approve' })
+  expect(toggle).toBeEnabled()
+  await userEvent.click(toggle)
+  expect(await screen.findByRole('button', { name: 'Approved' })).toBeInTheDocument()
 })
 
 test('Issues are sent to the code fixer and the run state is shown', async () => {

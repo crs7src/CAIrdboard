@@ -328,23 +328,26 @@ test('Test is disabled until the review is clean', async () => {
   expect(await screen.findByRole('button', { name: 'Test' })).toBeDisabled()
 })
 
-test('clicking Test starts the manual test', async () => {
+test('clicking the grey Test check approves and turns it green', async () => {
   const fetchMock = mockApi({
     '/api/cards': { body: [card('AB-1')] },
     '/api/plans': { body: { 'AB-1': 'approved' } },
     '/api/implementations': { body: { 'AB-1': 'completed' } },
     '/api/reviews': { body: { 'AB-1': 'clean' } },
     '/api/ai-config': { body: withRepo },
-    '/api/test-configs': { body: ['AB'] },
-    'POST /api/cards/AB-1/test': { status: 202, body: { state: 'preparing' } },
+    'PUT /api/cards/AB-1/test/approval': { body: { approved: true } },
   })
   renderHome()
   await userEvent.click(await screen.findByRole('button', { name: 'Test' }))
-  await vi.waitFor(() => expect(screen.getByText('Test: preparing')).toBeInTheDocument())
-  expect(fetchMock).toHaveBeenCalledWith('/api/cards/AB-1/test', expect.objectContaining({ method: 'POST' }))
+  await vi.waitFor(() => expect(screen.getByText('Test: approved')).toBeInTheDocument())
+  expect(screen.getByRole('img', { name: 'Test' })).toBeInTheDocument()
+  expect(fetchMock).toHaveBeenCalledWith(
+    '/api/cards/AB-1/test/approval',
+    expect.objectContaining({ method: 'PUT' }),
+  )
 })
 
-test('Test is disabled until the project has start settings', async () => {
+test('Test needs no saved start settings', async () => {
   mockApi({
     '/api/cards': { body: [card('AB-1')] },
     '/api/plans': { body: { 'AB-1': 'approved' } },
@@ -354,7 +357,7 @@ test('Test is disabled until the project has start settings', async () => {
     '/api/test-configs': { body: [] },
   })
   renderHome()
-  expect(await screen.findByRole('button', { name: 'Test' })).toBeDisabled()
+  expect(await screen.findByRole('button', { name: 'Test' })).toBeEnabled()
 })
 
 test('an approved test shows a check and Test: approved', async () => {
