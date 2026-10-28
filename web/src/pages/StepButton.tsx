@@ -1,10 +1,11 @@
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
+import ErrorIcon from '@mui/icons-material/Error'
 import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import CircularProgress from '@mui/material/CircularProgress'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
 
-export type StepStatus = 'next' | 'blocked' | 'running' | 'done'
+export type StepStatus = 'next' | 'blocked' | 'running' | 'done' | 'failed'
 
 interface Props {
   label: string
@@ -19,6 +20,17 @@ export default function StepButton({ label, status, onRun }: Props) {
       <Tooltip title={label}>
         <span role="img" style={{ display: 'inline-flex', padding: 4 }}>
           <CheckCircleIcon color="success" />
+        </span>
+      </Tooltip>
+    )
+  }
+  if (status === 'failed') {
+    return (
+      <Tooltip title={`${label} failed – click to retry`}>
+        <span>
+          <IconButton size="small" color="error" aria-label={`${label} failed`} onClick={onRun}>
+            <ErrorIcon />
+          </IconButton>
         </span>
       </Tooltip>
     )
