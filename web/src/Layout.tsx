@@ -8,6 +8,7 @@ import { Link, Outlet, useLocation } from 'react-router-dom'
 
 const links = [
   { to: '/', label: 'Home' },
+  { to: '/projects', label: 'Projects' },
   { to: '/settings', label: 'Settings' },
 ]
 

@@ -84,6 +84,9 @@ export default function AiSettings() {
         <Typography variant="h6" component="h2">
           Project repositories
         </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Tip: the Projects page sets up a project's repo, Jira key and git host in one place.
+        </Typography>
         {rows.map((row, i) => (
           <Stack key={i} direction="row" spacing={1}>
             <Autocomplete

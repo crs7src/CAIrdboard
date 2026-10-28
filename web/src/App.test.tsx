@@ -28,6 +28,14 @@ test('nav bar links to every page', () => {
   expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/settings')
 })
 
+test('the Projects nav link opens the projects page', async () => {
+  renderAt('/')
+  mockApi({ '/api/projects': { body: [] }, '/api/cards': { body: [] } })
+  expect(screen.getByRole('link', { name: 'Projects' })).toHaveAttribute('href', '/projects')
+  await userEvent.click(screen.getByRole('link', { name: 'Projects' }))
+  expect(await screen.findByRole('heading', { name: 'Projects' })).toBeInTheDocument()
+})
+
 test('the title in the header navigates home', async () => {
   renderAt('/settings/jira')
   await userEvent.click(screen.getByRole('link', { name: 'CAIrdboard' }))

@@ -21,6 +21,8 @@ class AiConfig(BaseModel):
     )
     # Jira project key (e.g. "ABC") -> absolute path of the repo to plan in.
     project_repos: dict[str, str] = Field(default_factory=dict)
+    # Project key -> display name shown on the Projects page.
+    project_names: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("eligible_statuses")
     @classmethod
@@ -42,6 +44,15 @@ class AiConfig(BaseModel):
                 raise ValueError(f"Repo path for {key} must be absolute")
             cleaned[key] = path
         return cleaned
+
+    @field_validator("project_names")
+    @classmethod
+    def clean_names(cls, v: dict[str, str]) -> dict[str, str]:
+        return {
+            key.strip().upper(): name.strip()
+            for key, name in v.items()
+            if key.strip() and name.strip()
+        }
 
     def is_eligible(self, status: str, source: str = "jira") -> bool:
         # An open GitHub issue is always plannable; its only other state is Closed.

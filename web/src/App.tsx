@@ -6,6 +6,7 @@ import Changes from './pages/Changes'
 import GitHubSettings from './pages/GitHubSettings'
 import GitLabSettings from './pages/GitLabSettings'
 import Home from './pages/Home'
+import Projects from './pages/Projects'
 import TestAppsSettings from './pages/TestAppsSettings'
 import SkillsSettings from './pages/SkillsSettings'
 import Settings from './pages/Settings'
@@ -16,6 +17,7 @@ export default function App() {
     <Routes>
       <Route element={<Layout />}>
         <Route path="/" element={<Home />} />
+        <Route path="/projects" element={<Projects />} />
         <Route path="/cards/:key" element={<CardDetail />} />
         <Route path="/cards/:key/changes" element={<Changes />} />
         <Route path="/ai-settings" element={<Navigate to="/settings/ai" replace />} />
