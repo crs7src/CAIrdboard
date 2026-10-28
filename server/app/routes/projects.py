@@ -9,6 +9,7 @@ from app.core.ai_config import AiConfig, load_ai_config, save_ai_config
 from app.core.config import (
     Settings,
 )
+from app.core.db import Archive
 from app.deps import (
     SettingsDep,
     _db,
@@ -130,13 +131,18 @@ async def get_project(key: str, settings: SettingsDep) -> projects.Project:
         if e.status_code == 503:
             errors = []
     db = _db(settings)
+    archived = set(Archive(db).keys())
     states = {
         "plan": _states(planner.PlanStore(db), planner.recover_stale),
         "implementation": _implementation_states(settings),
         "review": _states(reviewer.ReviewStore(db), reviewer.recover_stale),
         "test": _states(_test_store(settings), tester.recover_stale),
     }
-    project.cards = projects.project_cards(found, key, config, states)
+    project.cards = [
+        c
+        for c in projects.project_cards(found, key, config, states)
+        if c.key not in archived
+    ]
     project.card_warnings = "; ".join(errors) or None
     return project
 

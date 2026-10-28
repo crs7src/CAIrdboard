@@ -25,6 +25,7 @@ import { useEffect, useState } from 'react'
 import { Link as RouterLink } from 'react-router-dom'
 import {
   AI_PROVIDER_LABELS,
+  archiveCard,
   checkRepoHost,
   createProject,
   deleteProject,
@@ -84,7 +85,15 @@ function settingsLink(project: Project, item: SetupItem): string | null {
   return null
 }
 
-function CardList({ cards, warning }: { cards: ProjectCard[]; warning: string | null }) {
+function CardList({
+  cards,
+  warning,
+  onArchive,
+}: {
+  cards: ProjectCard[]
+  warning: string | null
+  onArchive: (key: string) => void
+}) {
   return (
     <Stack spacing={1}>
       <Typography variant="subtitle2">Cards</Typography>
@@ -108,7 +117,20 @@ function CardList({ cards, warning }: { cards: ProjectCard[]; warning: string | 
             </Typography>
             <List dense disablePadding aria-label={group}>
               {rows.map((c) => (
-                <ListItem key={c.key} disableGutters secondaryAction={<Chip size="small" label={stage(c)} />}>
+                <ListItem
+                  key={c.key}
+                  disableGutters
+                  secondaryAction={
+                    <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                      <Chip size="small" label={stage(c)} />
+                      {group === 'In Review/Done' && (
+                        <Button size="small" aria-label={`Archive ${c.key}`} onClick={() => onArchive(c.key)}>
+                          Archive
+                        </Button>
+                      )}
+                    </Stack>
+                  }
+                >
                   <ListItemText
                     primary={
                       <>
@@ -119,7 +141,7 @@ function CardList({ cards, warning }: { cards: ProjectCard[]; warning: string | 
                       </>
                     }
                     secondary={c.status}
-                    sx={{ pr: 18 }}
+                    sx={{ pr: 28 }}
                   />
                 </ListItem>
               ))}
@@ -284,6 +306,7 @@ function ProjectDetails({
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
+  const [archivedKeys, setArchivedKeys] = useState<string[]>([])
 
   useEffect(() => {
     fetchProject(project.key).then(setDetail, (e: Error) => setError(e.message))
@@ -295,6 +318,15 @@ function ProjectDetails({
     try {
       const p = await checkRepoHost(project.key)
       setResult(`OK: ${p.path}, default branch ${p.default_branch ?? 'none'}`)
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }
+
+  async function archive(cardKey: string) {
+    try {
+      await archiveCard(cardKey)
+      setArchivedKeys((k) => [...k, cardKey])
     } catch (err) {
       setError((err as Error).message)
     }
@@ -374,7 +406,13 @@ function ProjectDetails({
         </Alert>
       )}
       {!detail && !error && <CircularProgress size={20} aria-label="Loading cards" />}
-      {detail && <CardList cards={detail.cards ?? []} warning={detail.card_warnings} />}
+      {detail && (
+        <CardList
+          cards={(detail.cards ?? []).filter((c) => !archivedKeys.includes(c.key))}
+          warning={detail.card_warnings}
+          onArchive={archive}
+        />
+      )}
     </Stack>
   )
 }
