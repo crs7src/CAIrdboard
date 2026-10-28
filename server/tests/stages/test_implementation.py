@@ -1,6 +1,7 @@
 import subprocess
 from pathlib import Path
 
+import httpx
 import pytest
 import respx
 from dbutil import db
@@ -547,7 +548,7 @@ def test_refused_auto_review_keeps_the_implementation_completed(
 
 
 @respx.mock
-def test_implementation_stays_on_copilot_whatever_the_project_provider(
+def test_implementation_runs_on_the_anthropic_api_when_the_project_uses_it(
     client, env, ai, monkeypatch
 ):
     tmp_path, work = env
@@ -560,11 +561,39 @@ def test_implementation_stays_on_copilot_whatever_the_project_provider(
         ),
     )
     monkeypatch.setenv("ANTHROPIC_API_KEY", "ant-key")
-    api = respx.post("https://api.anthropic.com/v1/messages").respond(
-        json={
-            "stop_reason": "end_turn",
-            "content": [{"type": "text", "text": "api summary"}],
-        }
+
+    def text(value):
+        return httpx.Response(
+            200,
+            json={
+                "stop_reason": "end_turn",
+                "content": [{"type": "text", "text": value}],
+            },
+        )
+
+    commit = (
+        "echo x > api.txt && git add api.txt && "
+        "git commit -q -m 'AB-1: step 1 - via api'"
+    )
+    api = respx.post("https://api.anthropic.com/v1/messages").mock(
+        side_effect=[
+            text("api summary"),
+            httpx.Response(
+                200,
+                json={
+                    "stop_reason": "tool_use",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "t1",
+                            "name": "bash",
+                            "input": {"command": commit},
+                        }
+                    ],
+                },
+            ),
+            text("## Report\nDone"),
+        ]
     )
     mock_jira()
     approve_plan(tmp_path)
@@ -572,15 +601,16 @@ def test_implementation_stays_on_copilot_whatever_the_project_provider(
     assert client.post("/api/cards/AB-1/implementation").status_code == 202
     body = client.get("/api/cards/AB-1/implementation").json()
     assert body["state"] == "completed", body["error"]
-    assert body["provider"] == "copilot"
-    # Only the branch name came from the provider; the implementation ran on Copilot.
+    assert body["provider"] == "anthropic"
     assert body["branch"] == "AB-1_api_summary"
-    assert api.call_count == 1
-    assert len(ai.ai_calls) == 1 and "--allow-all-tools" in ai.implement_call
+    assert body["report"].startswith("## Report")
+    assert [c["subject"] for c in body["commits"]] == ["AB-1: step 1 - via api"]
+    assert api.call_count == 3
+    assert ai.ai_calls == []  # the Copilot CLI was never run
 
 
 @respx.mock
-def test_implementation_does_not_need_the_api_key_for_the_summary(client, env, ai):
+def test_implementation_without_the_api_key_is_503(client, env, ai):
     tmp_path, work = env
     save_ai_config(
         tmp_path / "ai.json",
@@ -592,7 +622,6 @@ def test_implementation_does_not_need_the_api_key_for_the_summary(client, env, a
     )
     mock_jira()
     approve_plan(tmp_path)
-    assert client.post("/api/cards/AB-1/implementation").status_code == 202
-    body = client.get("/api/cards/AB-1/implementation").json()
-    assert body["state"] == "completed", body["error"]
-    assert body["branch"] == "AB-1_add_dark_mode"
+    response = client.post("/api/cards/AB-1/implementation")
+    assert response.status_code == 503
+    assert implementer.ImplementationStore(db()).latest("AB-1") is None
