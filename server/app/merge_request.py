@@ -200,14 +200,17 @@ async def run_merge_request(
         else:
             await resolve_target(runner, repo, settings, run)
             store.save(run)
-            description = await build_description(
-                runner,
-                repo,
-                impl,
-                run.branch,
-                card,
-                closing_line(card, run.provider, run.host_project),
-            )
+            # Edits only apply to a new MR; an existing one keeps its host-side text.
+            description = run.description
+            if description is None:
+                description = await build_description(
+                    runner,
+                    repo,
+                    impl,
+                    run.branch,
+                    card,
+                    closing_line(card, run.provider, run.host_project),
+                )
             mr = await hosting.create(
                 settings,
                 run.provider,
