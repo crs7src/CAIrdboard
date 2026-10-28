@@ -265,7 +265,7 @@ def build_prompt(
         skill if skill is not None else load_skill(),
         "",
         f"Card: {card.key} - {card.summary}",
-        f"Jira status: {card.status}",
+        f"{card.source_label} status: {card.status}",
         f"Priority: {card.priority or 'none'}",
         f"Current branch (already checked out): {branch}",
         f"Base commit for your final review diff: {base_commit or '(unknown)'}",

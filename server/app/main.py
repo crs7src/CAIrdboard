@@ -1,8 +1,10 @@
+import asyncio
+from collections.abc import Awaitable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Response
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app import (
@@ -154,12 +156,20 @@ def _valid_key(key: str) -> str:
 
 
 async def _load_card(settings: Settings, key: str) -> jira.Card:
-    _require_jira(settings)
+    github_issue = github.is_issue_key(key)
+    if github_issue and not settings.github_configured:
+        raise HTTPException(
+            503, "GitHub is not configured. Add your credentials in Settings."
+        )
+    if not github_issue:
+        _require_jira(settings)
     try:
+        if github_issue:
+            return await github.fetch_issue_card(settings, _db(settings), key)
         return await jira.fetch_card(settings, key)
     except jira.CardNotFound as e:
         raise HTTPException(404, f"Card {key} not found") from e
-    except jira.JiraError as e:
+    except (jira.JiraError, HostError) as e:
         raise HTTPException(502, str(e)) from e
 
 
@@ -169,12 +179,35 @@ class CardDetail(jira.Card):
 
 
 @app.get("/api/cards")
-async def cards(settings: SettingsDep) -> list[jira.Card]:
-    _require_jira(settings)
-    try:
-        return await jira.fetch_assigned_cards(settings)
-    except jira.JiraError as e:
-        raise HTTPException(502, str(e)) from e
+async def cards(settings: SettingsDep, response: Response) -> list[jira.Card]:
+    """Jira and GitHub cards. If one source fails while another works, its error is
+    reported in the X-Card-Warnings header instead of failing the whole list."""
+    if not settings.jira_configured and not settings.github_configured:
+        _require_jira(settings)
+    sources: list[tuple[str, Awaitable[list[jira.Card]]]] = []
+    if settings.jira_configured:
+        sources.append(("Jira", jira.fetch_assigned_cards(settings)))
+    if settings.github_configured:
+        sources.append(
+            ("GitHub", github.fetch_assigned_issues(settings, _db(settings)))
+        )
+    results = await asyncio.gather(
+        *(coro for _, coro in sources), return_exceptions=True
+    )
+    found: list[jira.Card] = []
+    errors: list[str] = []
+    for result in results:
+        if isinstance(result, list):
+            found += result
+        elif isinstance(result, jira.JiraError | HostError):
+            errors.append(str(result))
+        else:
+            raise result
+    if errors and len(errors) == len(results):
+        raise HTTPException(502, "; ".join(errors))
+    if errors:
+        response.headers["X-Card-Warnings"] = "; ".join(errors)
+    return found
 
 
 @app.get("/api/cards/{key}")

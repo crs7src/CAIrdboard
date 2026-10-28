@@ -110,7 +110,7 @@ def build_prompt(
         skill if skill is not None else load_skill(),
         "",
         f"Card: {card.key} - {card.summary}",
-        f"Jira status: {card.status}",
+        f"{card.source_label} status: {card.status}",
         f"Current branch (already checked out): {impl.branch}",
         f"Base commit (review the diff {impl.base_commit or '(unknown)'}..HEAD)",
         "",

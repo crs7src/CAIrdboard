@@ -132,7 +132,7 @@ export default function CardDetail() {
         {card.reopened && <Chip label="Reopened before" color="error" variant="outlined" />}
         {card.priority && <Chip label={card.priority} color="warning" />}
         <Link href={card.url} target="_blank" rel="noreferrer">
-          Open in Jira
+          Open in {card.source === 'github' ? 'GitHub' : 'Jira'}
         </Link>
       </Stack>
       <Typography variant="h6" component="h2">

@@ -110,10 +110,27 @@ async def mark_outdated(runner, repo: str | None, run: MergeRequest | None) -> N
     run.outdated = head is not None and head != run.head
 
 
+def closing_line(card: Card, provider: str, host_project: str) -> str | None:
+    """Lets GitHub close the issue when its pull request merges."""
+    if card.source != "github" or provider != "github" or not card.external_repo:
+        return None
+    number = card.key.rsplit("-", 1)[1]
+    if card.external_repo.lower() == host_project.lower():
+        return f"Closes #{number}"
+    return f"Closes {card.external_repo}#{number}"
+
+
 async def build_description(
-    runner, repo: str, impl: Implementation, branch: str, card: Card
+    runner,
+    repo: str,
+    impl: Implementation,
+    branch: str,
+    card: Card,
+    closes: str | None = None,
 ) -> str:
     lines = [f"[{card.key}]({card.url}):"]
+    if closes:
+        lines += ["", closes]
     if impl.base_commit:
         out = await _git(
             runner,
@@ -160,7 +177,14 @@ async def run_merge_request(
         if existing:
             mr, run.updated_existing = existing, True
         else:
-            description = await build_description(runner, repo, impl, run.branch, card)
+            description = await build_description(
+                runner,
+                repo,
+                impl,
+                run.branch,
+                card,
+                closing_line(card, run.provider, run.host_project),
+            )
             mr = await hosting.create(
                 settings,
                 run.provider,

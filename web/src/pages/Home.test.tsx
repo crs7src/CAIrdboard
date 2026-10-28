@@ -412,3 +412,17 @@ test('a created merge request shows a check; one with new commits can be pushed 
   renderHome()
   expect((await screen.findAllByRole('button', { name: 'Create MR' }))[0]).toBeEnabled()
 })
+
+test('shows a warning when one card source failed but others loaded', async () => {
+  mockApi({
+    '/api/cards': {
+      body: [card('GH_APP-1', { source: 'github' })],
+      headers: { 'X-Card-Warnings': 'Could not reach Jira' },
+    },
+    '/api/plans': { body: {} },
+    '/api/ai-config': { body: config },
+  })
+  renderHome()
+  expect(await screen.findByRole('link', { name: /GH_APP-1/ })).toHaveAttribute('href', '/cards/GH_APP-1')
+  expect(screen.getByRole('note')).toHaveTextContent('Some cards could not be loaded: Could not reach Jira')
+})

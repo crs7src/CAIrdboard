@@ -125,7 +125,7 @@ def build_prompt(
         skill if skill is not None else load_skill(needs_rework(card)),
         "",
         f"Card: {card.key} - {card.summary}",
-        f"Jira status: {card.status}",
+        f"{card.source_label} status: {card.status}",
         f"Priority: {card.priority or 'none'}",
         "",
         "Description:",

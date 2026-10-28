@@ -12,6 +12,7 @@ DEFAULT_ELIGIBLE_STATUSES = [
     "To Do",
     "In Progress",
     "Reopened",
+    "Open",
 ]
 
 

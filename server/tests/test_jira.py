@@ -59,6 +59,8 @@ def test_cards_are_normalized(client):
             "status_history": [],
             "reopened": False,
             "last_reopened_at": None,
+            "source": "jira",
+            "external_repo": None,
         },
         {
             "key": "AB-2",
@@ -72,6 +74,8 @@ def test_cards_are_normalized(client):
             "status_history": [],
             "reopened": False,
             "last_reopened_at": None,
+            "source": "jira",
+            "external_repo": None,
         },
     ]
     request = route.calls.last.request

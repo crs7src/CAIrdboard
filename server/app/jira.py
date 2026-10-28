@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 import httpx
 from pydantic import BaseModel
@@ -51,6 +52,13 @@ class Card(BaseModel):
     # True if the card is, or ever was, in the Reopened status.
     reopened: bool = False
     last_reopened_at: str | None = None
+    source: Literal["jira", "github"] = "jira"
+    # owner/repo of a GitHub issue card
+    external_repo: str | None = None
+
+    @property
+    def source_label(self) -> str:
+        return "GitHub" if self.source == "github" else "Jira"
 
 
 def _client(settings: Settings) -> httpx.AsyncClient:

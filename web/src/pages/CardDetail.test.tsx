@@ -339,3 +339,18 @@ test('comments are collapsed by default', async () => {
   renderDetail()
   expect(await screen.findByRole('button', { name: /^Comments/ })).toHaveAttribute('aria-expanded', 'false')
 })
+
+test('a GitHub issue card links to the issue on GitHub', async () => {
+  mockApi({
+    '/api/cards/AB-1': {
+      body: detail({ source: 'github', url: 'https://github.com/me/app/issues/1', status: 'Open' }),
+    },
+    '/api/cards/AB-1/plan': NO_PLAN,
+  })
+  renderDetail()
+  expect(await screen.findByRole('link', { name: 'Open in GitHub' })).toHaveAttribute(
+    'href',
+    'https://github.com/me/app/issues/1',
+  )
+  expect(screen.queryByRole('link', { name: 'Open in Jira' })).not.toBeInTheDocument()
+})

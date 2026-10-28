@@ -24,15 +24,27 @@ export interface Card {
   status_history: StatusChange[]
   reopened: boolean
   last_reopened_at: string | null
+  source?: 'jira' | 'github'
+  external_repo?: string | null
 }
 
-export async function fetchCards(): Promise<Card[]> {
+export interface CardList {
+  cards: Card[]
+  // Set when one source (Jira or GitHub) failed while another worked.
+  warning: string | null
+}
+
+export async function fetchCardList(): Promise<CardList> {
   const response = await fetch('/api/cards')
   if (!response.ok) {
     const body = await response.json().catch(() => null)
     throw new Error(body?.detail ?? `Request failed: ${response.status}`)
   }
-  return response.json()
+  return { cards: await response.json(), warning: response.headers?.get('X-Card-Warnings') ?? null }
+}
+
+export async function fetchCards(): Promise<Card[]> {
+  return (await fetchCardList()).cards
 }
 
 export interface JiraStatus {

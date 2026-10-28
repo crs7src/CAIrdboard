@@ -14,7 +14,7 @@ import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import StepButton, { type StepStatus } from './StepButton'
 import {
   fetchAiConfig,
-  fetchCards,
+  fetchCardList,
   fetchImplementationStates,
   fetchPlanStates,
   fetchReviewStates,
@@ -78,6 +78,7 @@ function implementStep(plan: PlanState | undefined, impl: ImplState | undefined,
 }
 
 export default function Home() {
+  const [warning, setWarning] = useState<string | null>(null)
   const [cards, setCards] = useState<JiraCard[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -107,7 +108,9 @@ export default function Home() {
     setLoading(true)
     setError(null)
     try {
-      setCards(await fetchCards())
+      const list = await fetchCardList()
+      setCards(list.cards)
+      setWarning(list.warning)
       // Plan info only decorates the list, so failures here are not fatal.
       const [p, im, rv, ts, cfg, tp, ap, mr] = await Promise.all([
         fetchPlanStates().catch(() => ({})),
@@ -172,6 +175,7 @@ export default function Home() {
           {error}
         </Alert>
       )}
+      {warning && <Alert severity="warning" role="note">Some cards could not be loaded: {warning}</Alert>}
       {actionError && <Alert severity="error">{actionError}</Alert>}
       {cards?.length === 0 && <Alert severity="info" role="note">No cards assigned to you.</Alert>}
       {sections.map(({ title, items }) => (

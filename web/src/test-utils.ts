@@ -3,6 +3,7 @@ import { vi } from 'vitest'
 export interface Reply {
   status?: number
   body?: unknown
+  headers?: Record<string, string>
 }
 
 type Route = Reply | Reply[] | ((init?: RequestInit) => Reply)
@@ -25,7 +26,7 @@ export function mockApi(routes: Record<string, Route>) {
       reply = route[Math.min(n, route.length - 1)]
     } else if (route) reply = route
     const status = reply.status ?? 200
-    return { ok: status < 400, status, json: async () => reply.body }
+    return { ok: status < 400, status, headers: new Headers(reply.headers), json: async () => reply.body }
   })
   vi.stubGlobal('fetch', fn)
   return fn
