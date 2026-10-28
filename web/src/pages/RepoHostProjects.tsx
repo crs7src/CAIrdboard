@@ -104,7 +104,7 @@ export default function RepoHostProjects({ provider }: { provider: RepoProvider 
         Project mapping
       </Typography>
       <Typography variant="body2" color="text.secondary">
-        Each Jira project's repo is matched to a {LABELS[provider]} project from its origin remote. Set a path to override it.
+        Each Jira project's repo is matched to a {LABELS[provider]} project from its origin remote. Set a path to override it. The Projects page sets this up together with the rest of a project.
       </Typography>
       {error && <Alert severity="error">{error}</Alert>}
       {projects?.length === 0 && (
