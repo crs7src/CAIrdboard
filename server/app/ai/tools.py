@@ -87,7 +87,7 @@ class ToolBox:
             raise ToolError(f"Unknown tool '{name}'")
         except ToolError as e:
             return f"Error: {e}"
-        except (OSError, re.error) as e:
+        except (OSError, re.error, ValueError, TypeError) as e:
             return f"Error: {e}"
 
     def _resolve(self, value: object) -> Path:
