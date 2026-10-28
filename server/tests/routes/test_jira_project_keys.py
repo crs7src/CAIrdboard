@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.core.db import JiraProjects
 from app.integrations import jira
-from app.main import app
+from app.main import app, warm_jira_projects
 
 
 def card(key, source="jira", project=None):
@@ -78,3 +78,27 @@ def test_recording_failure_does_not_fail_the_request(env, jira_cards, monkeypatc
     jira_cards["cards"] = [card("AB-1")]
     with TestClient(app) as client:
         assert client.get("/api/cards").status_code == 200
+
+
+async def test_warm_up_records_keys_when_jira_is_configured(env, jira_cards):
+    jira_cards["cards"] = [card("AB-1"), card("CD-2")]
+    await warm_jira_projects()
+    assert JiraProjects(db()).keys() == ["AB", "CD"]
+
+
+async def test_warm_up_only_logs_when_unconfigured(env, jira_cards, monkeypatch):
+    monkeypatch.delenv("JIRA_BASE_URL")
+    monkeypatch.delenv("JIRA_EMAIL")
+    monkeypatch.delenv("JIRA_API_TOKEN")
+    await warm_jira_projects()
+    assert jira_cards["calls"] == 0
+    assert JiraProjects(db()).keys() == []
+
+
+async def test_warm_up_swallows_jira_failure(env, monkeypatch):
+    async def fail(settings):
+        raise jira.JiraError("down")
+
+    monkeypatch.setattr(jira, "fetch_assigned_cards", fail)
+    await warm_jira_projects()
+    assert JiraProjects(db()).keys() == []

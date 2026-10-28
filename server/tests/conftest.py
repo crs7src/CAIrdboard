@@ -25,3 +25,14 @@ def ai_credentials_file(tmp_path_factory, monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     return path
+
+
+@pytest.fixture(autouse=True)
+def no_jira_warm_up(monkeypatch):
+    """The startup warm-up must never call Jira from tests."""
+    import app.main
+
+    async def skip():
+        return None
+
+    monkeypatch.setattr(app.main, "warm_jira_projects", skip)
