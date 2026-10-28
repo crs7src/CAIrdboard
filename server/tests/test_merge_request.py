@@ -247,3 +247,46 @@ def test_defaults_endpoint(client, env):
     assert "- AB-1: step 1 - add toggle" in body["description"]
     assert client.get("/api/cards/bad/merge-request/defaults").status_code == 404
     assert client.get("/api/cards/AB-1/merge-request").status_code == 404
+
+
+@respx.mock
+def test_custom_title_and_description_are_sent(client, env):
+    tmp_path, work = env
+    mock_jira()
+    ready(tmp_path, work)
+    respx.get(MR_API).respond(json=[])
+    create = respx.post(MR_API).respond(201, json=CREATED)
+
+    response = client.post(
+        "/api/cards/AB-1/merge-request",
+        json={"title": "  My title ", "description": "My text"},
+    )
+    assert response.status_code == 202
+    sent = json.loads(create.calls.last.request.content)
+    assert sent["title"] == "My title" and sent["description"] == "My text"
+    run = client.get("/api/cards/AB-1/merge-request").json()
+    assert run["title"] == "My title" and run["description"] == "My text"
+
+
+@respx.mock
+def test_partial_body_falls_back_to_defaults(client, env):
+    tmp_path, work = env
+    mock_jira()
+    ready(tmp_path, work)
+    respx.get(MR_API).respond(json=[])
+    create = respx.post(MR_API).respond(201, json=CREATED)
+
+    client.post("/api/cards/AB-1/merge-request", json={"title": "Only title"})
+    sent = json.loads(create.calls.last.request.content)
+    assert sent["title"] == "Only title"
+    assert "[AB-1](https://example.atlassian.net/browse/AB-1)" in sent["description"]
+
+
+@respx.mock
+def test_blank_title_is_422(client, env):
+    tmp_path, work = env
+    mock_jira()
+    ready(tmp_path, work)
+    response = client.post("/api/cards/AB-1/merge-request", json={"title": "  "})
+    assert response.status_code == 422
+    assert client.get("/api/cards/AB-1/merge-request").status_code == 404

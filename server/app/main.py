@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Response
+from fastapi import BackgroundTasks, Body, Depends, FastAPI, HTTPException, Response
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from app import (
@@ -1540,12 +1540,25 @@ async def merge_request_defaults(
     )
 
 
+class MergeRequestBody(BaseModel):
+    title: str | None = None
+    description: str | None = None
+
+    @field_validator("title")
+    @classmethod
+    def _title_not_blank(cls, v: str | None) -> str | None:
+        if v is not None and not v.strip():
+            raise ValueError("The title cannot be blank")
+        return v.strip() if v is not None else None
+
+
 @app.post("/api/cards/{key}/merge-request", status_code=202)
 async def create_merge_request(
     key: str,
     settings: SettingsDep,
     runner: RunnerDep,
     background: BackgroundTasks,
+    body: Annotated[MergeRequestBody | None, Body()] = None,
 ) -> merge_request.MergeRequest:
     """Push the approved branch to origin and open its merge request (or update it)."""
     key = _valid_key(key)
@@ -1582,7 +1595,14 @@ async def create_merge_request(
     ):
         raise HTTPException(409, "This card is already being worked on")
 
-    run = store.create(key, impl, host.provider, host.path)
+    run = store.create(
+        key,
+        impl,
+        host.provider,
+        host.path,
+        title=body.title if body else None,
+        description=body.description if body else None,
+    )
     merge_request.ACTIVE.add(key)
     background.add_task(
         merge_request.run_merge_request, store, run, impl, card, repo, settings, runner
