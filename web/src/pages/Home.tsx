@@ -8,7 +8,7 @@ import CardContent from '@mui/material/CardContent'
 import Chip from '@mui/material/Chip'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import StepButton, { type StepStatus } from './StepButton'
@@ -36,6 +36,8 @@ import {
   type ReviewState,
 } from '../api'
 
+const POLL_MS = 3000
+
 function isEligible(config: AiConfig | null, status: string, source?: string) {
   if (source === 'github' && status === 'Open') return true
   const wanted = status.trim().toLowerCase()
@@ -45,6 +47,7 @@ function isEligible(config: AiConfig | null, status: string, source?: string) {
 function planStep(plan: PlanState | undefined, eligible: boolean): StepStatus {
   if (plan === 'approved') return 'done'
   if (plan === 'running') return 'running'
+  if (plan === 'failed') return 'failed'
   if (plan === 'ready') return 'next'
   return eligible ? 'next' : 'blocked'
 }
@@ -52,6 +55,7 @@ function planStep(plan: PlanState | undefined, eligible: boolean): StepStatus {
 function reviewStep(impl: ImplState | undefined, review: ReviewState | undefined): StepStatus {
   if (review === 'clean') return 'done'
   if (review === 'running') return 'running'
+  if (review === 'failed') return 'failed'
   return impl === 'completed' ? 'next' : 'blocked'
 }
 
@@ -63,18 +67,21 @@ function testStep(
 ): StepStatus {
   if (approved || test === 'running') return 'done'
   if (test === 'preparing') return 'running'
+  if (test === 'failed') return 'failed'
   return review === 'clean' && configured ? 'next' : 'blocked'
 }
 
 function mergeRequestStep(mr: MergeRequestState | 'outdated' | undefined, approved: boolean): StepStatus {
   if (mr === 'created') return 'done'
   if (mr === 'running') return 'running'
+  if (mr === 'failed') return 'failed'
   return approved ? 'next' : 'blocked'
 }
 
 function implementStep(plan: PlanState | undefined, impl: ImplState | undefined, canRun: boolean): StepStatus {
   if (impl === 'completed') return 'done'
   if (impl === 'running') return 'running'
+  if (impl === 'failed') return 'failed'
   return plan === 'approved' && canRun ? 'next' : 'blocked'
 }
 
@@ -94,6 +101,7 @@ export default function Home() {
 
   const navigate = useNavigate()
   const [actionError, setActionError] = useState<string | null>(null)
+  const refreshing = useRef(false)
 
   async function run(fn: () => Promise<unknown>, onDone: () => void) {
     setActionError(null)
@@ -105,6 +113,30 @@ export default function Home() {
     }
   }
 
+  const refreshStates = useCallback(async () => {
+    if (refreshing.current) return
+    refreshing.current = true
+    try {
+      const [p, im, rv, ts, ap, mr] = await Promise.all([
+        fetchPlanStates().catch(() => null),
+        fetchImplementationStates().catch(() => null),
+        fetchReviewStates().catch(() => null),
+        fetchTestStates().catch(() => null),
+        fetchTestApprovals().catch(() => null),
+        fetchMergeRequestStates().catch(() => null),
+      ])
+      // A failed poll keeps the last known state instead of clearing it.
+      if (p) setPlans(p)
+      if (im) setImpls(im)
+      if (rv) setReviews(rv)
+      if (ts) setTests(ts)
+      if (ap) setApprovals(ap)
+      if (mr) setMrs(mr)
+    } finally {
+      refreshing.current = false
+    }
+  }, [])
+
   const sync = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -113,35 +145,37 @@ export default function Home() {
       setCards(list.cards)
       setWarning(list.warning)
       // Plan info only decorates the list, so failures here are not fatal.
-      const [p, im, rv, ts, cfg, tp, ap, mr] = await Promise.all([
-        fetchPlanStates().catch(() => ({})),
-        fetchImplementationStates().catch(() => ({})),
-        fetchReviewStates().catch(() => ({})),
-        fetchTestStates().catch(() => ({})),
+      const [cfg, tp] = await Promise.all([
         fetchAiConfig().catch(() => null),
         fetchConfiguredTestProjects().catch(() => []),
-        fetchTestApprovals().catch(() => []),
-        fetchMergeRequestStates().catch(() => ({})),
+        refreshStates(),
       ])
-      setPlans(p)
-      setImpls(im)
-      setReviews(rv)
-      setTests(ts)
       setConfig(cfg)
       setTestProjects(tp)
-      setApprovals(ap)
-      setMrs(mr)
     } catch (e) {
       setError((e as Error).message)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [refreshStates])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     sync()
   }, [sync])
+
+  const active =
+    Object.values(plans).includes('running') ||
+    Object.values(impls).includes('running') ||
+    Object.values(reviews).includes('running') ||
+    Object.values(tests).includes('preparing') ||
+    Object.values(mrs).includes('running')
+
+  useEffect(() => {
+    if (!active) return
+    const id = setInterval(refreshStates, POLL_MS)
+    return () => clearInterval(id)
+  }, [active, refreshStates])
 
   // An ineligible status is always In Review/Done; otherwise a plan in any state means In Progress.
   // If the config could not be loaded, every card is treated as eligible.
@@ -258,26 +292,39 @@ export default function Home() {
                 <Chip
                   label={`Test: ${approvals.includes(card.key) ? 'approved' : (tests[card.key] ?? 'available')}`}
                   size="small"
-                  color={approvals.includes(card.key) ? 'success' : tests[card.key] ? undefined : 'primary'}
+                  color={
+                    approvals.includes(card.key)
+                      ? 'success'
+                      : tests[card.key] === 'failed'
+                        ? 'error'
+                        : tests[card.key]
+                          ? undefined
+                          : 'primary'
+                  }
                   variant="outlined"
                 />
               ) : plans[card.key] === 'approved' && impls[card.key] === 'completed' ? (
                 <Chip
                   label={`Review: ${reviews[card.key] ?? 'available'}`}
                   size="small"
-                  color={reviews[card.key] ? undefined : 'primary'}
+                  color={reviews[card.key] === 'failed' ? 'error' : reviews[card.key] ? undefined : 'primary'}
                   variant="outlined"
                 />
               ) : plans[card.key] === 'approved' ? (
                 <Chip
                   label={`Implementation: ${impls[card.key] ?? 'available'}`}
                   size="small"
-                  color={impls[card.key] ? undefined : 'primary'}
+                  color={impls[card.key] === 'failed' ? 'error' : impls[card.key] ? undefined : 'primary'}
                   variant="outlined"
                 />
               ) : (
                 plans[card.key] && (
-                  <Chip label={`Plan: ${plans[card.key]}`} size="small" variant="outlined" />
+                  <Chip
+                    label={`Plan: ${plans[card.key]}`}
+                    size="small"
+                    color={plans[card.key] === 'failed' ? 'error' : undefined}
+                    variant="outlined"
+                  />
                 )
               )}
               {!plans[card.key] && isEligible(config, card.status, card.source) && (
