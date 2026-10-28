@@ -21,6 +21,7 @@ import {
   fetchTestStates,
   fetchTestApprovals,
   fetchMergeRequestStates,
+  fetchMergeRequestUrls,
   startMergeRequest,
   type MergeRequestState,
   setTestApproval,
@@ -93,6 +94,7 @@ export default function Home() {
   const [tests, setTests] = useState<Record<string, TestState>>({})
   const [approvals, setApprovals] = useState<string[]>([])
   const [mrs, setMrs] = useState<Record<string, MergeRequestState | 'outdated'>>({})
+  const [mrUrls, setMrUrls] = useState<Record<string, string>>({})
   const [impls, setImpls] = useState<Record<string, ImplState>>({})
   const [config, setConfig] = useState<AiConfig | null>(null)
 
@@ -114,13 +116,14 @@ export default function Home() {
     if (refreshing.current) return
     refreshing.current = true
     try {
-      const [p, im, rv, ts, ap, mr] = await Promise.all([
+      const [p, im, rv, ts, ap, mr, urls] = await Promise.all([
         fetchPlanStates().catch(() => null),
         fetchImplementationStates().catch(() => null),
         fetchReviewStates().catch(() => null),
         fetchTestStates().catch(() => null),
         fetchTestApprovals().catch(() => null),
         fetchMergeRequestStates().catch(() => null),
+        fetchMergeRequestUrls().catch(() => null),
       ])
       // A failed poll keeps the last known state instead of clearing it.
       if (p) setPlans(p)
@@ -129,6 +132,7 @@ export default function Home() {
       if (ts) setTests(ts)
       if (ap) setApprovals(ap)
       if (mr) setMrs(mr)
+      if (urls) setMrUrls(urls)
     } finally {
       refreshing.current = false
     }
@@ -268,6 +272,7 @@ export default function Home() {
             <StepButton
               label="Create MR"
               status={mergeRequestStep(mrs[card.key], approvals.includes(card.key))}
+              href={mrUrls[card.key]}
               onRun={() =>
                 run(
                   () => startMergeRequest(card.key),

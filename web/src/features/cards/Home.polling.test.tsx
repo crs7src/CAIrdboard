@@ -76,6 +76,7 @@ const failing = [
       '/api/implementations': { body: { 'AB-1': 'completed' } },
       '/api/reviews': { body: { 'AB-1': 'clean' } },
       '/api/test-approvals': { body: ['AB-1'] },
+      '/api/merge-requests/urls': { body: {} },
       '/api/merge-requests': [{ body: { 'AB-1': 'running' } }, { body: { 'AB-1': 'failed' } }],
     },
   ],

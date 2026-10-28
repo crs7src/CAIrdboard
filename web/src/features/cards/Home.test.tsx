@@ -377,7 +377,7 @@ test('an approved test shows a check and Test: approved', async () => {
   expect(screen.queryByRole('button', { name: 'Test' })).not.toBeInTheDocument()
 })
 
-const mrHome = (mrs: Record<string, string>, approvals: string[]) => ({
+const mrHome = (mrs: Record<string, string>, approvals: string[], urls: Record<string, string> = {}) => ({
   '/api/cards': { body: [card('AB-1')] },
   '/api/plans': { body: { 'AB-1': 'approved' } },
   '/api/implementations': { body: { 'AB-1': 'completed' } },
@@ -387,6 +387,7 @@ const mrHome = (mrs: Record<string, string>, approvals: string[]) => ({
   '/api/test-configs': { body: ['AB'] },
   '/api/test-approvals': { body: approvals },
   '/api/merge-requests': { body: mrs },
+  '/api/merge-requests/urls': { body: urls },
 })
 
 test('Create MR is blocked until the test is approved', async () => {
@@ -407,11 +408,18 @@ test('Create MR starts the merge request once approved', async () => {
 })
 
 test('a created merge request shows a check; one with new commits can be pushed again', async () => {
+  mockApi(mrHome({ 'AB-1': 'created' }, ['AB-1'], { 'AB-1': 'https://git.test/mr/7' }))
+  renderHome()
+  const link = await screen.findByRole('link', { name: 'Create MR' })
+  expect(link).toHaveAttribute('href', 'https://git.test/mr/7')
+  expect(link).toHaveAttribute('target', '_blank')
+  expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'))
+  vi.unstubAllGlobals()
   mockApi(mrHome({ 'AB-1': 'created' }, ['AB-1']))
   renderHome()
-  expect(await screen.findByRole('img', { name: 'Create MR' })).toBeInTheDocument()
+  expect((await screen.findAllByRole('img', { name: 'Create MR' }))[0]).toBeInTheDocument()
   vi.unstubAllGlobals()
-  mockApi(mrHome({ 'AB-1': 'outdated' }, ['AB-1']))
+  mockApi(mrHome({ 'AB-1': 'outdated' }, ['AB-1'], { 'AB-1': 'https://git.test/mr/7' }))
   renderHome()
   expect((await screen.findAllByRole('button', { name: 'Create MR' }))[0]).toBeEnabled()
 })
