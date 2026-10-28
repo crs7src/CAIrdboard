@@ -44,9 +44,14 @@ def _detail(response: httpx.Response) -> str:
         return ""
     parts = [str(body["message"])] if body.get("message") else []
     for err in body.get("errors") or []:
-        parts.append(
-            str(err.get("message") or err) if isinstance(err, dict) else str(err)
-        )
+        if isinstance(err, dict) and not err.get("message") and err.get("field"):
+            parts.append(
+                f"{err.get('resource', 'value')} {err['field']} is {err.get('code', 'invalid')}"
+            )
+        else:
+            parts.append(
+                str(err.get("message") or err) if isinstance(err, dict) else str(err)
+            )
     return f": {'; '.join(parts)}"[:400] if parts else ""
 
 

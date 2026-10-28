@@ -146,6 +146,22 @@ async def build_description(
     return "\n".join(lines)
 
 
+async def resolve_target(
+    runner, repo: str, settings: Settings, run: MergeRequest
+) -> None:
+    """Make sure the target branch exists on origin; branches continued from an earlier
+    run have no recorded base, and a local base may never have been pushed."""
+    ref = f"refs/heads/{run.target_branch}"
+    if await _git(runner, repo, "ls-remote", "--heads", "origin", ref):
+        return
+    project = await hosting.fetch_project(settings, run.provider, run.host_project)
+    if not project.default_branch:
+        raise ImplementationError(
+            f"Branch '{run.target_branch}' is not on origin and the default branch is unknown"
+        )
+    run.target_branch = project.default_branch
+
+
 async def run_merge_request(
     store: MergeRequestStore,
     run: MergeRequest,
@@ -177,6 +193,8 @@ async def run_merge_request(
         if existing:
             mr, run.updated_existing = existing, True
         else:
+            await resolve_target(runner, repo, settings, run)
+            store.save(run)
             description = await build_description(
                 runner,
                 repo,
