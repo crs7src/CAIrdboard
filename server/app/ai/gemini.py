@@ -4,6 +4,7 @@ import httpx
 
 from app.ai import Mode
 from app.ai.errors import ProviderError, request_json
+from app.ai.tools import MAX_ITERATIONS, TOOL_SPECS, ToolBox
 from app.stages.planner import CommandResult, CommandTimeout
 
 BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
@@ -35,7 +36,9 @@ class GeminiProvider:
     id = "gemini"
     label = LABEL
 
-    def __init__(self, api_key: str, model: str, *, max_iterations: int = 20):
+    def __init__(
+        self, api_key: str, model: str, *, max_iterations: int = MAX_ITERATIONS
+    ):
         self.api_key = api_key
         self.model = model
         self.max_iterations = max_iterations
@@ -45,7 +48,7 @@ class GeminiProvider:
     ) -> CommandResult:
         try:
             async with asyncio.timeout(timeout):
-                text = await self._complete(prompt, cwd)
+                text = await self._complete(prompt, cwd, mode)
         except TimeoutError as e:
             raise CommandTimeout from e
         except ProviderError as e:
@@ -54,14 +57,48 @@ class GeminiProvider:
             return CommandResult(1, "", f"{LABEL} returned no text")
         return CommandResult(0, text, "")
 
-    async def _complete(self, prompt: str, cwd: str) -> str:
-        body = {
-            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-            "generationConfig": {"maxOutputTokens": MAX_TOKENS},
-        }
+    async def _complete(self, prompt: str, cwd: str, mode: Mode) -> str:
+        toolbox = ToolBox(cwd) if mode != "summary" else None
+        contents: list[dict] = [{"role": "user", "parts": [{"text": prompt}]}]
         async with httpx.AsyncClient(timeout=httpx.Timeout(600)) as client:
-            data = await self._generate(client, body)
-        return _text(_content(data))
+            for _ in range(self.max_iterations):
+                body: dict = {
+                    "contents": contents,
+                    "generationConfig": {"maxOutputTokens": MAX_TOKENS},
+                }
+                if toolbox:
+                    body["tools"] = [{"functionDeclarations": TOOL_SPECS}]
+                content = _content(await self._generate(client, body))
+                calls = [
+                    p["functionCall"]
+                    for p in content.get("parts") or []
+                    if "functionCall" in p
+                ]
+                if toolbox and calls:
+                    contents.append(content)
+                    contents.append(
+                        {
+                            "role": "user",
+                            "parts": [
+                                {
+                                    "functionResponse": {
+                                        "name": c.get("name", ""),
+                                        "response": {
+                                            "result": toolbox.call(
+                                                c.get("name", ""), c.get("args")
+                                            )
+                                        },
+                                    }
+                                }
+                                for c in calls
+                            ],
+                        }
+                    )
+                    continue
+                return _text(content)
+        raise ProviderError(
+            f"{LABEL} did not finish within {self.max_iterations} tool steps"
+        )
 
     async def _generate(self, client, body: dict) -> dict:
         return await request_json(

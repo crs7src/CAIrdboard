@@ -4,6 +4,7 @@ import httpx
 
 from app.ai import Mode
 from app.ai.errors import ProviderError, request_json
+from app.ai.tools import MAX_ITERATIONS, TOOL_SPECS, ToolBox
 from app.stages.planner import CommandResult, CommandTimeout
 
 BASE_URL = "https://api.anthropic.com/v1"
@@ -39,7 +40,9 @@ class AnthropicProvider:
     id = "anthropic"
     label = LABEL
 
-    def __init__(self, api_key: str, model: str, *, max_iterations: int = 20):
+    def __init__(
+        self, api_key: str, model: str, *, max_iterations: int = MAX_ITERATIONS
+    ):
         self.api_key = api_key
         self.model = model
         self.max_iterations = max_iterations
@@ -49,7 +52,7 @@ class AnthropicProvider:
     ) -> CommandResult:
         try:
             async with asyncio.timeout(timeout):
-                text = await self._complete(prompt, cwd)
+                text = await self._complete(prompt, cwd, mode)
         except TimeoutError as e:
             raise CommandTimeout from e
         except ProviderError as e:
@@ -58,23 +61,54 @@ class AnthropicProvider:
             return CommandResult(1, "", f"{LABEL} returned no text")
         return CommandResult(0, text, "")
 
-    async def _complete(self, prompt: str, cwd: str) -> str:
-        body = {
-            "model": self.model,
-            "max_tokens": MAX_TOKENS,
-            "messages": [{"role": "user", "content": prompt}],
-        }
+    async def _complete(self, prompt: str, cwd: str, mode: Mode) -> str:
+        toolbox = ToolBox(cwd) if mode != "summary" else None
+        messages: list[dict] = [{"role": "user", "content": prompt}]
         async with httpx.AsyncClient(timeout=httpx.Timeout(600)) as client:
-            data = await request_json(
-                client,
-                "POST",
-                f"{BASE_URL}/messages",
-                label=LABEL,
-                secret=self.api_key,
-                headers=_headers(self.api_key),
-                json=body,
-            )
-        return _text(data)
+            for _ in range(self.max_iterations):
+                body = {
+                    "model": self.model,
+                    "max_tokens": MAX_TOKENS,
+                    "messages": messages,
+                }
+                if toolbox:
+                    body["tools"] = [
+                        {
+                            "name": t["name"],
+                            "description": t["description"],
+                            "input_schema": t["parameters"],
+                        }
+                        for t in TOOL_SPECS
+                    ]
+                data = await request_json(
+                    client,
+                    "POST",
+                    f"{BASE_URL}/messages",
+                    label=LABEL,
+                    secret=self.api_key,
+                    headers=_headers(self.api_key),
+                    json=body,
+                )
+                blocks = data.get("content") or []
+                if toolbox and data.get("stop_reason") == "tool_use":
+                    messages.append({"role": "assistant", "content": blocks})
+                    results = [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": b.get("id"),
+                            "content": toolbox.call(b.get("name", ""), b.get("input")),
+                        }
+                        for b in blocks
+                        if b.get("type") == "tool_use"
+                    ]
+                    messages.append({"role": "user", "content": results})
+                    continue
+                if data.get("stop_reason") == "max_tokens":
+                    raise ProviderError(f"{LABEL} cut its answer off (too long)")
+                return _text(data)
+        raise ProviderError(
+            f"{LABEL} did not finish within {self.max_iterations} tool steps"
+        )
 
 
 def _text(data: dict) -> str:
