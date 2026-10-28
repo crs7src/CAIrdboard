@@ -4,7 +4,7 @@ import httpx
 
 from app.ai import Mode
 from app.ai.errors import ProviderError, request_json
-from app.ai.tools import MAX_ITERATIONS, TOOL_SPECS, ToolBox
+from app.ai.tools import MAX_AGENT_ITERATIONS, MAX_ITERATIONS, ToolBox, tool_specs
 from app.stages.planner import CommandResult, CommandTimeout
 
 BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
@@ -37,11 +37,17 @@ class GeminiProvider:
     label = LABEL
 
     def __init__(
-        self, api_key: str, model: str, *, max_iterations: int = MAX_ITERATIONS
+        self,
+        api_key: str,
+        model: str,
+        *,
+        max_iterations: int = MAX_ITERATIONS,
+        max_agent_iterations: int = MAX_AGENT_ITERATIONS,
     ):
         self.api_key = api_key
         self.model = model
         self.max_iterations = max_iterations
+        self.max_agent_iterations = max_agent_iterations
 
     async def run(
         self, prompt: str, cwd: str, timeout: float, mode: Mode = "plan"
@@ -58,17 +64,20 @@ class GeminiProvider:
         return CommandResult(0, text, "")
 
     async def _complete(self, prompt: str, cwd: str, mode: Mode) -> str:
-        toolbox = ToolBox(cwd) if mode != "summary" else None
+        agent = mode == "agent"
+        toolbox = ToolBox(cwd, agent=agent) if mode != "summary" else None
+        limit = self.max_agent_iterations if agent else self.max_iterations
         contents: list[dict] = [{"role": "user", "parts": [{"text": prompt}]}]
         async with httpx.AsyncClient(timeout=httpx.Timeout(600)) as client:
-            for _ in range(self.max_iterations):
+            for _ in range(limit):
                 body: dict = {
                     "contents": contents,
                     "generationConfig": {"maxOutputTokens": MAX_TOKENS},
                 }
                 if toolbox:
-                    body["tools"] = [{"functionDeclarations": TOOL_SPECS}]
-                content = _content(await self._generate(client, body))
+                    body["tools"] = [{"functionDeclarations": tool_specs(agent)}]
+                data = await self._generate(client, body)
+                content = _content(data)
                 calls = [
                     p["functionCall"]
                     for p in content.get("parts") or []
@@ -76,29 +85,26 @@ class GeminiProvider:
                 ]
                 if toolbox and calls:
                     contents.append(content)
-                    contents.append(
+                    parts = [
                         {
-                            "role": "user",
-                            "parts": [
-                                {
-                                    "functionResponse": {
-                                        "name": c.get("name", ""),
-                                        "response": {
-                                            "result": toolbox.call(
-                                                c.get("name", ""), c.get("args")
-                                            )
-                                        },
-                                    }
-                                }
-                                for c in calls
-                            ],
+                            "functionResponse": {
+                                "name": c.get("name", ""),
+                                "response": {
+                                    # Tools can block (bash), so keep them off the event loop.
+                                    "result": await asyncio.to_thread(
+                                        toolbox.call, c.get("name", ""), c.get("args")
+                                    )
+                                },
+                            }
                         }
-                    )
+                        for c in calls
+                    ]
+                    contents.append({"role": "user", "parts": parts})
                     continue
+                if _finish_reason(data) == "MAX_TOKENS":
+                    raise ProviderError(f"{LABEL} cut its answer off (too long)")
                 return _text(content)
-        raise ProviderError(
-            f"{LABEL} did not finish within {self.max_iterations} tool steps"
-        )
+        raise ProviderError(f"{LABEL} did not finish within {limit} tool steps")
 
     async def _generate(self, client, body: dict) -> dict:
         return await request_json(
@@ -120,6 +126,10 @@ def _content(data: dict) -> dict:
             f"{LABEL} returned no answer" + (f" (blocked: {reason})" if reason else "")
         )
     return candidates[0].get("content") or {}
+
+
+def _finish_reason(data: dict) -> str:
+    return ((data.get("candidates") or [{}])[0]).get("finishReason") or ""
 
 
 def _text(content: dict) -> str:

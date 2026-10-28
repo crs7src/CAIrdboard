@@ -15,7 +15,7 @@ const provider = (id: string, label: string, over = {}) => ({
   models: ['model-a', 'model-b'],
   needs_key: id !== 'copilot',
   is_default: id === 'copilot',
-  supports_agent: id !== 'gemini',
+  supports_agent: true,
   ...over,
 })
 const list = (anthropic = {}) => [
@@ -30,7 +30,7 @@ test('lists the providers; Copilot needs no key and the agent limit is explained
   expect(await screen.findByLabelText('Anthropic API key')).toBeInTheDocument()
   expect(screen.getByLabelText('Google Gemini API key')).toBeInTheDocument()
   expect(screen.getAllByLabelText(/API key/)).toHaveLength(2)
-  expect(screen.getByText(/Anthropic can run every stage/)).toBeInTheDocument()
+  expect(screen.getByText(/Anthropic and Google Gemini can run every stage/)).toBeInTheDocument()
   expect(screen.getByText('default')).toBeInTheDocument()
 })
 

@@ -37,7 +37,7 @@ def test_registry_and_default_resolution():
     assert set(PROVIDERS) == {"copilot", "anthropic", "gemini"}
     assert PROVIDERS["copilot"].supports_agent
     assert PROVIDERS["anthropic"].supports_agent
-    assert not PROVIDERS["gemini"].supports_agent
+    assert PROVIDERS["gemini"].supports_agent
     assert resolve_provider_id(AiConfig(), "ABC") == "copilot"
 
 

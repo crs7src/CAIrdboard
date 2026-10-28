@@ -193,10 +193,8 @@ export default function AiProvidersSettings() {
         AI providers
       </Typography>
       <Alert severity="info" role="note">
-        Projects use the default provider unless you pick another in the Projects page. Anthropic can run every stage,
-        including implement, review and feedback, with confined file-edit and shell tools. Google Gemini runs only
-        the read-only stages (plan and test); implement, review and feedback use GitHub Copilot CLI for those
-        projects.
+        Projects use the default provider unless you pick another in the Projects page. Anthropic and Google Gemini
+        can run every stage, including implement, review and feedback, with confined file-edit and shell tools.
       </Alert>
       {error && <Alert severity="error">{error}</Alert>}
       {providers && current && (
