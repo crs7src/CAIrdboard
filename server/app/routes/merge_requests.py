@@ -45,6 +45,18 @@ async def merge_request_states(
     return states
 
 
+@router.get("/api/merge-requests/urls")
+def merge_request_urls(settings: SettingsDep) -> dict[str, str]:
+    """Link to the merge/pull request of every card that has one."""
+    store = merge_request.MergeRequestStore(_db(settings))
+    urls: dict[str, str] = {}
+    for key in store.card_keys():
+        run = merge_request.recover_stale(store, store.latest(key))
+        if run is not None and run.state == "created" and run.mr_url:
+            urls[key] = run.mr_url
+    return urls
+
+
 @router.get("/api/cards/{key}/merge-request")
 async def get_merge_request(
     key: str, settings: SettingsDep, runner: RunnerDep

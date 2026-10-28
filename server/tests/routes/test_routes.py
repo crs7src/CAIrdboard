@@ -31,6 +31,7 @@ get /api/gitlab/status
 get /api/implementations
 get /api/jira/status
 get /api/merge-requests
+get /api/merge-requests/urls
 get /api/plans
 get /api/projects
 get /api/projects/{key}
