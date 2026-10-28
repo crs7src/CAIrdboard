@@ -107,6 +107,7 @@ export async function fetchCardDetail(key: string): Promise<CardDetail> {
 export interface AiConfig {
   eligible_statuses: string[]
   project_repos: Record<string, string>
+  auto_review: boolean
 }
 
 export interface DirListing {

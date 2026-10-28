@@ -39,6 +39,7 @@ test('saves edited statuses and added/removed projects', async () => {
   expect(JSON.parse(put[1]!.body as string)).toEqual({
     eligible_statuses: ['Backlog', 'Ready to Play'],
     project_repos: { XY: '/repos/xy' },
+    auto_review: true,
   })
 })
 
@@ -113,4 +114,32 @@ test('browse picks a repo folder by navigating the server file tree', async () =
   expect(await screen.findByRole('alert')).toBeVisible()
   await userEvent.click(screen.getByRole('button', { name: 'Select this folder' }))
   expect(screen.getByLabelText('Repo path 1')).toHaveValue('/repos')
+})
+
+test('auto review switch is on by default and reflects a loaded false', async () => {
+  mockApi({ '/api/ai-config': { body: config } })
+  const { unmount } = render(<AiSettings />)
+  const label = 'Automatically start the review when implementation completes'
+  expect(await screen.findByRole('switch', { name: label })).toBeChecked()
+  unmount()
+  mockApi({ '/api/ai-config': { body: { ...config, auto_review: false } } })
+  render(<AiSettings />)
+  expect(await screen.findByRole('switch', { name: label })).not.toBeChecked()
+})
+
+test('toggling auto review sends it in the save payload', async () => {
+  const fetchMock = mockApi({
+    '/api/ai-config': { body: config },
+    'PUT /api/ai-config': (init) => ({ body: JSON.parse(init!.body as string) }),
+  })
+  render(<AiSettings />)
+  await userEvent.click(
+    await screen.findByRole('switch', {
+      name: 'Automatically start the review when implementation completes',
+    }),
+  )
+  await userEvent.click(screen.getByRole('button', { name: 'Save AI settings' }))
+  await screen.findByRole('status')
+  const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT')!
+  expect(JSON.parse(put[1]!.body as string).auto_review).toBe(false)
 })

@@ -23,7 +23,7 @@ test('edit AI settings and save them', async ({ page }) => {
       return route.fulfill({ json: saved })
     }
     return route.fulfill({
-      json: { eligible_statuses: ['Backlog'], project_repos: { AB: '/repos/ab' } },
+      json: { eligible_statuses: ['Backlog'], project_repos: { AB: '/repos/ab' }, auto_review: true },
     })
   })
   await page.goto('/')
@@ -40,11 +40,13 @@ test('edit AI settings and save them', async ({ page }) => {
   await page.getByText('xy', { exact: true }).click()
   await page.getByRole('button', { name: 'Select this folder' }).click()
   await expect(page.getByLabel('Repo path 2')).toHaveValue('/home/me/repos/xy')
+  await page.getByLabel('Automatically start the review when implementation completes').uncheck()
   await page.getByRole('button', { name: 'Save AI settings' }).click()
 
   await expect(page.getByRole('status')).toHaveText('AI settings saved.')
   expect(saved).toEqual({
     eligible_statuses: ['Backlog', 'Ready to Play'],
     project_repos: { AB: '/repos/ab', XY: '/home/me/repos/xy' },
+    auto_review: false,
   })
 })
