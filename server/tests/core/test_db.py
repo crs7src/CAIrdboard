@@ -5,7 +5,7 @@ import pytest
 from dbutil import db
 
 from app.core.config import Settings
-from app.core.db import Approvals, Database
+from app.core.db import Approvals, Archive, Database
 from app.core.legacy_import import import_legacy_files
 from app.stages import feedback, implementer, planner, reviewer, tester
 
@@ -242,3 +242,17 @@ def test_approvals_are_per_card():
     assert approvals.keys() == ["AB-2"]
     with pytest.raises(ValueError):
         approvals.get("../x")
+
+
+def test_archive_add_remove_and_list_are_idempotent():
+    archive = Archive(db())
+    assert archive.keys() == []
+    archive.add("AB-2")
+    archive.add("AB-1")
+    archive.add("AB-1")
+    assert archive.keys() == ["AB-1", "AB-2"]
+    assert archive.remove("AB-1") is True
+    assert archive.remove("AB-1") is False
+    assert archive.keys() == ["AB-2"]
+    with pytest.raises(ValueError):
+        archive.add("bad")
