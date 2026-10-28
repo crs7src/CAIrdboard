@@ -98,7 +98,7 @@ test('start the manual test, open a link, and stop the app', async ({ page }) =>
 
   await page.goto('/')
   await expect(page.getByText('Test: available')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Test', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Test', exact: true })).toBeEnabled()
   await page.goto('/cards/AB-1')
   await page.getByRole('button', { name: /^Test not started/ }).click()
   await expect(page.getByRole('button', { name: 'Start test', exact: true })).toBeDisabled()

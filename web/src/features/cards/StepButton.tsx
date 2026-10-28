@@ -1,6 +1,7 @@
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import ErrorIcon from '@mui/icons-material/Error'
 import PlayArrowIcon from '@mui/icons-material/PlayArrow'
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutlined'
 import CircularProgress from '@mui/material/CircularProgress'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
@@ -11,10 +12,12 @@ interface Props {
   label: string
   status: StepStatus
   onRun?: () => void
+  /** Show a grey check instead of a play arrow until the step is done. */
+  check?: boolean
 }
 
 /** Play button for one workflow step; becomes a green check once the step is done. */
-export default function StepButton({ label, status, onRun }: Props) {
+export default function StepButton({ label, status, onRun, check }: Props) {
   if (status === 'done') {
     return (
       <Tooltip title={label}>
@@ -40,12 +43,12 @@ export default function StepButton({ label, status, onRun }: Props) {
       <span>
         <IconButton
           size="small"
-          color="primary"
+          color={check ? 'default' : 'primary'}
           aria-label={label}
           disabled={status !== 'next'}
           onClick={onRun}
         >
-          {status === 'running' ? <CircularProgress size={18} /> : <PlayArrowIcon />}
+          {status === 'running' ? <CircularProgress size={18} /> : check ? <CheckCircleOutlineIcon /> : <PlayArrowIcon />}
         </IconButton>
       </span>
     </Tooltip>
