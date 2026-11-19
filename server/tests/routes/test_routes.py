@@ -54,6 +54,7 @@ post /api/cards/{key}/merge-request
 post /api/cards/{key}/plan
 post /api/cards/{key}/plan/approve
 post /api/cards/{key}/plan/reject
+post /api/cards/{key}/reset
 post /api/cards/{key}/review
 post /api/cards/{key}/test
 post /api/cards/{key}/test/feedback
@@ -64,6 +65,7 @@ put /api/ai/default
 put /api/ai/providers/{provider_id}/credentials
 put /api/cards/{key}/archive
 put /api/cards/{key}/feedback/comments/{comment_id}
+put /api/cards/{key}/reopen-prompt/dismiss
 put /api/cards/{key}/test/approval
 put /api/github/credentials
 put /api/gitlab/credentials

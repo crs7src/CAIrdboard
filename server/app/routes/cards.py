@@ -16,6 +16,7 @@ from app.deps import (
 )
 from app.integrations import github, jira, remotes
 from app.integrations.remotes import HostError
+from app.routes.reset import reset_pending
 
 router = APIRouter()
 log = logging.getLogger(__name__)
@@ -91,6 +92,7 @@ async def _fetch_card(settings: Settings, key: str) -> jira.Card:
 class CardDetail(jira.Card):
     eligible: bool
     repo_configured: bool
+    reset_needed: bool = False
 
 
 async def _load_cards(settings: Settings) -> tuple[list[jira.Card], list[str]]:
@@ -142,4 +144,5 @@ async def card_detail(key: str, settings: SettingsDep) -> CardDetail:
         **card.model_dump(),
         eligible=config.is_eligible(card.status, card.source),
         repo_configured=config.repo_for(card.project) is not None,
+        reset_needed=reset_pending(settings, card.key, card.last_reopened_at),
     )
