@@ -38,6 +38,11 @@ CREATE TABLE IF NOT EXISTS test_approvals (
     card_key TEXT PRIMARY KEY,
     approved_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS card_resets (
+    card_key TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS archived_cards (
     card_key TEXT PRIMARY KEY,
     archived_at TEXT NOT NULL
@@ -319,3 +324,45 @@ class Archive:
                 "SELECT card_key FROM archived_cards ORDER BY card_key"
             ).fetchall()
         return [r[0] for r in rows]
+
+
+def delete_card_data(db: Database, key: str) -> None:
+    """Remove every run (all kinds), comment and the test approval of a card."""
+    check_key(key)
+    with db.connect(exclusive=True) as conn:
+        for table in ("runs", "comments", "test_approvals"):
+            conn.execute(f"DELETE FROM {table} WHERE card_key = ?", (key,))
+
+
+def last_activity(db: Database, key: str) -> str | None:
+    """When the card's most recently touched run was last updated."""
+    with db.connect() as conn:
+        row = conn.execute(
+            "SELECT MAX(updated_at) FROM runs WHERE card_key = ?", (check_key(key),)
+        ).fetchone()
+    return row[0]
+
+
+class Resets:
+    """The latest time a card was reset, or its reopen prompt was dismissed."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    def get(self, key: str) -> str | None:
+        with self.db.connect() as conn:
+            row = conn.execute(
+                "SELECT at FROM card_resets WHERE card_key = ?", (check_key(key),)
+            ).fetchone()
+        return row[0] if row else None
+
+    def mark(self, key: str, kind: str) -> str:
+        stamp = now()
+        with self.db.connect() as conn:
+            conn.execute(
+                "INSERT INTO card_resets (card_key, kind, at) VALUES (?, ?, ?) "
+                "ON CONFLICT(card_key) DO UPDATE SET kind = excluded.kind, "
+                "at = excluded.at",
+                (check_key(key), kind, stamp),
+            )
+        return stamp
