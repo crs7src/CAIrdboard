@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, expect, test, vi } from 'vitest'
@@ -389,4 +389,56 @@ test('a fix run hides the later stages, then the auto-started review shows witho
   await vi.advanceTimersByTimeAsync(3100)
   await vi.waitFor(() => expect(screen.queryByText('clean')).not.toBeInTheDocument())
   expect(screen.getByText('running')).toBeInTheDocument()
+})
+
+const PROMPT = /has been reopened since the last change/
+
+test('reopen prompt shows only when reset_needed; Yes resets and reloads', async () => {
+  const fetchMock = mockApi({
+    '/api/cards/AB-1': [{ body: detail({ reset_needed: true }) }, { body: detail() }],
+    '/api/cards/AB-1/plan': NO_PLAN,
+    'POST /api/cards/AB-1/reset': { body: { branch: null, branch_deleted: false, deleted_sha: null, notes: [] } },
+  })
+  renderDetail()
+  expect(await screen.findByText(PROMPT)).toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: 'Yes' }))
+  await waitFor(() => expect(screen.queryByText(PROMPT)).not.toBeInTheDocument())
+  const reset = fetchMock.mock.calls.find(([u, i]) => u === '/api/cards/AB-1/reset' && i?.method === 'POST')
+  expect(JSON.parse(reset![1]!.body as string)).toEqual({ delete_branch: true })
+})
+
+test('reopen prompt No dismisses without resetting', async () => {
+  const fetchMock = mockApi({
+    '/api/cards/AB-1': { body: detail({ reset_needed: true }) },
+    '/api/cards/AB-1/plan': NO_PLAN,
+    'PUT /api/cards/AB-1/reopen-prompt/dismiss': { status: 204, body: null },
+  })
+  renderDetail()
+  await screen.findByText(PROMPT)
+  await userEvent.click(screen.getByRole('button', { name: 'No' }))
+  await waitFor(() => expect(screen.queryByText(PROMPT)).not.toBeInTheDocument())
+  expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/reset'))).toBe(false)
+})
+
+test('no prompt when the card does not need a reset', async () => {
+  mockApi({ '/api/cards/AB-1': { body: detail() }, '/api/cards/AB-1/plan': NO_PLAN })
+  renderDetail()
+  await screen.findByRole('heading', { name: 'AB-1' })
+  expect(screen.queryByText(PROMPT)).not.toBeInTheDocument()
+})
+
+test('Reset card confirms in a dialog; cancel does nothing', async () => {
+  const fetchMock = mockApi({
+    '/api/cards/AB-1': { body: detail() },
+    '/api/cards/AB-1/plan': NO_PLAN,
+    'POST /api/cards/AB-1/reset': { body: { branch: null, branch_deleted: false, deleted_sha: null, notes: [] } },
+  })
+  const resets = () => fetchMock.mock.calls.filter(([u]) => String(u).endsWith('/reset')).length
+  renderDetail()
+  await userEvent.click(await screen.findByRole('button', { name: 'Reset card' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+  expect(resets()).toBe(0)
+  await userEvent.click(await screen.findByRole('button', { name: 'Reset card' }))
+  await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Reset' }))
+  await waitFor(() => expect(resets()).toBe(1))
 })

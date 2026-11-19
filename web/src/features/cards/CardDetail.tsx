@@ -32,6 +32,7 @@ import {
   type Plan,
 } from '../../api'
 import ProviderChip from '../../shared/ProviderChip'
+import { ReopenNotice, ResetButton } from './ResetCard'
 
 export const POLL_MS = 2000
 
@@ -59,6 +60,22 @@ export default function CardDetail() {
     prevImplState.current = s
     setImplState(s)
   }, [])
+  const reload = useCallback(() => {
+    setError(null)
+    setImplState(null)
+    prevImplState.current = null
+    setReviewState(undefined)
+    setReviewEpoch(0)
+    setTestApproved(false)
+    setPlanOpen(false)
+    Promise.all([fetchCardDetail(key), fetchPlan(key)]).then(
+      ([c, p]) => {
+        setCard(c)
+        setPlan(p)
+      },
+      (e: Error) => setError(e.message),
+    )
+  }, [key])
   const onFixStarted = useCallback(() => setFixTick((t) => t + 1), [])
 
   useEffect(() => {
@@ -146,7 +163,21 @@ export default function CardDetail() {
         <Link href={card.url} target="_blank" rel="noreferrer">
           Open in {card.source === 'github' ? 'GitHub' : 'Jira'}
         </Link>
+        <ResetButton
+          cardKey={key}
+          disabled={running || implState === 'running'}
+          onReset={reload}
+          onError={setError}
+        />
       </Stack>
+      {card.reset_needed && (
+        <ReopenNotice
+          cardKey={key}
+          onReset={reload}
+          onDismiss={() => setCard({ ...card, reset_needed: false })}
+          onError={setError}
+        />
+      )}
       <Typography variant="h6" component="h2">
         {card.summary}
       </Typography>
