@@ -52,6 +52,7 @@ export async function fetchCards(): Promise<Card[]> {
 export interface CardDetail extends Card {
   eligible: boolean
   repo_configured: boolean
+  reset_needed?: boolean
 }
 
 export async function fetchCardDetail(key: string): Promise<CardDetail> {
