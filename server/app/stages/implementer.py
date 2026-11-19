@@ -20,7 +20,7 @@ from app.stages.planner import (
 )
 
 ImplState = Literal["running", "completed", "failed"]
-ImplStage = Literal["preparing", "implementing", "done"]
+ImplStage = Literal["preparing", "implementing", "fixing", "done"]
 
 # The implementer may edit files and run commands, but never publish anything,
 # rewrite history, or destroy work. It may checkout/switch, but run_implementation

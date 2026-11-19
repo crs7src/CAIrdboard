@@ -80,6 +80,9 @@ class ReviewStore(RunStore[Review]):
 # Card keys with a review in this server process (repos are tracked in the
 # implementer's ACTIVE_REPOS so a review and an implementation never share a repo).
 ACTIVE: set[str] = set()
+# Cards whose automatic review is about to start; the list endpoint reports them as running
+# so pollers do not stop in the gap before the review run exists.
+PENDING: set[str] = set()
 
 
 def recover_stale(store: ReviewStore, run: Review | None) -> Review | None:

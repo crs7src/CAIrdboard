@@ -126,12 +126,15 @@ async def _auto_review(
             or not load_ai_config(settings.ai_config_file).auto_review
         ):
             return
+        reviewer.PENDING.add(key)
         _, args = await _prepare_review(key, settings, runner)
         await reviewer.run_review(*args)
     except Exception:
         logging.getLogger(__name__).warning(
             "Automatic review of %s was not started", key, exc_info=True
         )
+    finally:
+        reviewer.PENDING.discard(key)
 
 
 async def _feedback_then_review(
@@ -150,6 +153,9 @@ async def get_implementation(
     run = implementer.recover_stale(store, store.latest(key))
     if run is None:
         raise HTTPException(404, "No implementation exists for this card")
+    if key in feedback.ACTIVE:
+        # Feedback fixes reuse the implementation UI: the card is being worked on again.
+        run = run.model_copy(update={"state": "running", "stage": "fixing"})
     if run.state == "running" and run.base_commit:
         # Show commits as they land while the AI is still working.
         try:

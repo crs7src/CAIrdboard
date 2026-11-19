@@ -360,3 +360,33 @@ test('the plan shows which AI provider produced it', async () => {
   renderDetail()
   expect(await screen.findByText('via Anthropic')).toBeInTheDocument()
 })
+
+test('a fix run hides the later stages, then the auto-started review shows without a reload', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  mockApi({
+    '/api/cards/AB-1': { body: detail() },
+    '/api/cards/AB-1/plan': { body: plan({ state: 'approved' }) },
+    '/api/cards/AB-1/implementation': [
+      { body: implementation({ state: 'running', stage: 'fixing' }) },
+      { body: implementation() },
+    ],
+    '/api/cards/AB-1/review': [
+      { body: review({ version: 1, state: 'clean' }) },
+      { body: review({ version: 2, state: 'running' }) },
+    ],
+    '/api/cards/AB-1/test': { body: testRun() },
+  })
+  renderDetail()
+  expect(await screen.findByRole('button', { name: /^Implementation/ })).toBeInTheDocument()
+  expect(await screen.findByText('running')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /^Review/ })).not.toBeInTheDocument()
+  expect(screen.queryByRole('link', { name: 'View changes' })).not.toBeInTheDocument()
+
+  await vi.advanceTimersByTimeAsync(3100)
+  expect(await screen.findByText('completed')).toBeInTheDocument()
+  expect(await screen.findByText('clean')).toBeInTheDocument()
+
+  await vi.advanceTimersByTimeAsync(3100)
+  await vi.waitFor(() => expect(screen.queryByText('clean')).not.toBeInTheDocument())
+  expect(screen.getByText('running')).toBeInTheDocument()
+})

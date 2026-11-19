@@ -249,6 +249,31 @@ def test_stale_running_run_is_marked_failed(client, env):
     assert run["state"] == "failed" and "Interrupted" in run["error"]
 
 
+def test_active_feedback_run_shows_the_implementation_as_fixing(client, env):
+    tmp_path, work = env
+    make_impl(tmp_path, work)
+    assert client.get("/api/cards/AB-1/implementation").json()["state"] == "completed"
+    feedback.ACTIVE.add("AB-1")
+    body = client.get("/api/cards/AB-1/implementation").json()
+    assert body["state"] == "running" and body["stage"] == "fixing"
+    assert client.get("/api/implementations").json() == {"AB-1": "running"}
+    feedback.ACTIVE.discard("AB-1")
+    body = client.get("/api/cards/AB-1/implementation").json()
+    assert body["state"] == "completed" and body["stage"] != "fixing"
+    assert client.get("/api/implementations").json() == {"AB-1": "completed"}
+
+
+def test_pending_automatic_review_is_listed_as_running(client):
+    from app.stages import reviewer
+
+    assert client.get("/api/reviews").json() == {}
+    reviewer.PENDING.add("AB-1")
+    try:
+        assert client.get("/api/reviews").json() == {"AB-1": "running"}
+    finally:
+        reviewer.PENDING.discard("AB-1")
+
+
 # ---- run_feedback directly --------------------------------------------------
 
 

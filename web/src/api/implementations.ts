@@ -15,7 +15,7 @@ export interface Implementation {
   version: number
   plan_version: number
   state: ImplState
-  stage: 'preparing' | 'implementing' | 'done'
+  stage: 'preparing' | 'implementing' | 'fixing' | 'done'
   branch: string | null
   base_branch: string | null
   base_commit: string | null

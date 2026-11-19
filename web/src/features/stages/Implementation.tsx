@@ -22,14 +22,18 @@ import ProviderChip from '../../shared/ProviderChip'
 
 export const IMPL_POLL_MS = 3000
 
-const STAGE_LABEL = { preparing: 'Preparing branch...', implementing: 'Implementing...', done: '' }
+const STAGE_LABEL = { preparing: 'Preparing branch...', implementing: 'Implementing...',
+  fixing: 'Applying feedback...',
+  done: '', }
 
 interface Props {
   cardKey: string
   onStateChange?: (state: Impl['state'] | null) => void
+  // Bump to refetch right away, e.g. after feedback was submitted.
+  refreshKey?: number
 }
 
-export default function Implementation({ cardKey, onStateChange }: Props) {
+export default function Implementation({ cardKey, onStateChange, refreshKey = 0 }: Props) {
   const [impl, setImpl] = useState<Impl | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -46,7 +50,7 @@ export default function Implementation({ cardKey, onStateChange }: Props) {
         setLoaded(true)
       },
     )
-  }, [cardKey])
+  }, [cardKey, refreshKey])
 
   const state = impl?.state ?? null
   useEffect(() => {

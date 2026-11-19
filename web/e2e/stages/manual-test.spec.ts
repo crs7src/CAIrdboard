@@ -312,7 +312,6 @@ test('issues found while testing are sent to the code fixer', async ({ page }) =
   await page.getByRole('button', { name: 'Send to code fixer' }).click()
   await expect(page.getByText(/An AI is fixing the reported issues/)).toBeVisible()
   expect(sent).toEqual({ message: 'the save button does nothing' })
-  await expect(page.getByText(/Fixes made/)).toBeVisible({ timeout: 15_000 })
 })
 
 test('approve without having run the app through this app', async ({ page }) => {

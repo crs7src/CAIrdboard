@@ -199,17 +199,14 @@ test('Approve is available before a test has run', async () => {
   expect(await screen.findByRole('button', { name: 'Approved' })).toBeInTheDocument()
 })
 
-test('Issues are sent to the code fixer and the run state is shown', async () => {
-  vi.useFakeTimers({ shouldAdvanceTime: true })
+test('Issues are sent to the code fixer and the card page is told', async () => {
+  const onFixStarted = vi.fn()
   const fetchMock = mockApi({
     '/api/cards/AB-1/test': { body: testRun() },
-    '/api/cards/AB-1/feedback': [
-      { body: { comments: [], run: null } },
-      { body: { comments: [], run: feedbackRun({ state: 'done', commits: [{ sha: 'a', short: 'a', subject: 's' }] }) } },
-    ],
+    '/api/cards/AB-1/feedback': { body: { comments: [], run: null } },
     'POST /api/cards/AB-1/test/feedback': { status: 202, body: feedbackRun() },
   })
-  render(<Test cardKey="AB-1" />, { wrapper: MemoryRouter })
+  render(<Test cardKey="AB-1" onFixStarted={onFixStarted} />, { wrapper: MemoryRouter })
   await open()
   const send = await screen.findByRole('button', { name: 'Send to code fixer' })
   expect(send).toBeDisabled()
@@ -219,8 +216,7 @@ test('Issues are sent to the code fixer and the run state is shown', async () =>
   expect(send).toBeDisabled()
   const post = fetchMock.mock.calls.find(([u, i]) => String(u).endsWith('/test/feedback') && i?.method === 'POST')!
   expect(JSON.parse(String(post[1]?.body))).toEqual({ message: 'button does nothing' })
-  await vi.advanceTimersByTimeAsync(2100)
-  expect(await screen.findByText(/Fixes made \(1 commit\)/)).toBeInTheDocument()
+  expect(onFixStarted).toHaveBeenCalledTimes(1)
 })
 
 test('an Issues failure is shown as an error', async () => {
